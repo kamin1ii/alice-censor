@@ -1,0 +1,10 @@
+#ALICEPACK --src-dir=out --cache-dir=out\alice-tools-cache
+.\rance02GA.ald
+cg00001.png,QNT
+cg00002.png,QNT
+cg00003.png,QNT
+cg00010.png,QNT
+cg21050.png,QNT
+cg21051.png,QNT
+cg21052.png,QNT
+cg99999.png,QNT

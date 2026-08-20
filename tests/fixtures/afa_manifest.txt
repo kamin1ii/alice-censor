@@ -1,0 +1,15 @@
+#ALICEPACK --src-dir=out --cache-dir=out\alice-tools-cache
+.\Rance01CG.afa
+イベント／シィルＨ０１.png,qnt
+イベント／シィルＨ０２.png,qnt
+イベント／シィルＨ０３.png,qnt
+イベント／シィル挿入前.png,qnt
+イベント／シィル挿入.png,qnt
+イベント／シィル射精.png,qnt
+イベント／シィル射精後.png,qnt
+イベント／シィル笑う.png,qnt
+イベント／リリスＨ０１.png,qnt
+イベント／リリスＨ０２.png,qnt
+CG／タイトル.png,qnt
+"CG／weird, name.png",qnt
+背景／教室.png,qnt

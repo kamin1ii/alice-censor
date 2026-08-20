@@ -1,0 +1,71 @@
+name: build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# Windows only, deliberately. The app drives alice.exe and ships as a
+# Windows exe, so a green build on another platform would not mean much.
+# This mirrors build.ps1 step for step, so a CI failure is reproducible
+# locally with one command.
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Run tests
+        # The suite needs no display and no alice.exe. conftest.py sets
+        # this itself, repeated here so a headless failure is obviously
+        # about the display rather than about Qt.
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -q
+
+      - name: Build the exe
+        run: pyinstaller --noconfirm --clean alice-censor.spec
+
+      - name: Verify the exe starts
+        # A build can succeed and still produce an exe that dies on
+        # launch, which is what an over-eager exclusion in the spec looks
+        # like. The app has no batch mode, so surviving its first seconds
+        # in the event loop is the pass condition.
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $p = Start-Process .\dist\AliceCensor.exe -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 15
+          if (-not (Get-Process -Id $p.Id -ErrorAction SilentlyContinue)) {
+            throw "AliceCensor.exe exited on its own, so the build is broken"
+          }
+          Stop-Process -Id $p.Id -Force
+          $mb = (Get-Item .\dist\AliceCensor.exe).Length / 1MB
+          Write-Host ("exe is {0:N1} MB" -f $mb)
+          # A sudden jump means an exclusion in the spec stopped matching,
+          # usually because a Qt release renamed something.
+          if ($mb -gt 60) { throw ("exe is {0:N1} MB, far larger than expected" -f $mb) }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AliceCensor-exe
+          path: dist/AliceCensor.exe
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/AliceCensor.exe

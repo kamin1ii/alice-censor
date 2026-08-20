@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+
+# Extracted CG / project working folders (large, regenerable, may contain
+# adult content) - don't commit these by default.
+out/
+*.acproj.json
+*.orig-backup
+.thumbnails/
+
+# PyInstaller build output. The spec file is source and is committed, the
+# products of running it are not.
+build/
+dist/
+*.manifest

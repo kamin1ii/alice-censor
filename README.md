@@ -261,3 +261,16 @@ The suite runs offscreen (`QT_QPA_PLATFORM=offscreen`) and needs neither a displ
 - Repacking rewrites your game archive in place. Keep the automatic `.orig-backup`. For an
   `.afa` it is your safety net, and for an `.ald` it is also the source every rebuild reads from,
   which is what stops a second repack stacking a censor on top of the first one.
+
+## License
+
+GPL-3.0, see [LICENSE](LICENSE).
+
+Chosen to match the ecosystem this lives in. alice-tools and the libsys4 it is built on are
+GPL-2.0-or-later, and the ALD reader and writer here were written against that project's source
+and the published format notes, so copyleft is both the safe and the neighbourly choice.
+GPL-2.0-or-later code can be combined into a GPL-3.0 work, so nothing conflicts.
+
+alice-tools itself is neither bundled nor modified here. It is a separate program this one
+invokes, and it keeps its own license.
+

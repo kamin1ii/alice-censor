@@ -71,10 +71,9 @@ Requires Python 3.11 or newer, and a copy of nightly alice.exe from [nunuhara/al
 > splash screens displayed correctly.
 >
 > That is the whole of the testing. No other game, no other archive, and only a handful of
-> interface images rather than scene CGs. Expect the
-> possibility of a missing or broken image somewhere nobody has looked yet. Keep your
-> `.orig-backup`, treat a rebuilt archive as something to test rather than something to trust,
-> and reports either way are welcome.
+> interface images rather than scene CGs. Expect the possibility of a missing or broken image
+> somewhere nobody has looked yet. Keep your `.orig-backup`, treat a rebuilt archive as something
+> to test rather than something to trust, and reports either way are welcome.
 
 alice-tools can extract `.ald` but cannot write it, so Alice Censor writes that format itself
 (`alice_censor/ald.py`, following the [format spec](https://haniwa.technology/tech/ald.html)).

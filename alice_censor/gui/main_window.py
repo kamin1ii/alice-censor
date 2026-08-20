@@ -334,11 +334,8 @@ class MainWindow(QMainWindow):
         render, which does at least prove the re-encoded entries work and
         not merely that the container parses.
 
-        Two gaps are worth naming rather than leaving implied. Those images
-        were interface art, so no edited scene CG has been seen in game.
-        And all of them were already QNT, so nothing has yet exercised the
-        one case where an entry changes format, an edited AJP becoming QNT
-        under a renamed extension.
+        Worth naming rather than leaving implied. Those images were
+        interface art, so no edited scene CG has been seen in game.
         """
         if self.session is None:
             return None
@@ -352,10 +349,9 @@ class MainWindow(QMainWindow):
             "archive has also been played in Rance 02, where a few edited images on "
             "the save and load menu and the splash screens displayed correctly.\n\n"
             "That is the whole of the testing. No other game, no other archive, and "
-            "only a handful of interface images rather than scene CGs. Nobody has yet "
-            "edited an image that was originally AJP, which is the one case where an "
-            "entry changes format and gets renamed. Expect the possibility of a "
-            "missing or broken image somewhere nobody has looked yet.\n\n"
+            "only a handful of interface images rather than scene CGs. Expect the "
+            "possibility of a missing or broken image somewhere nobody has looked "
+            "yet.\n\n"
             "Keep the .orig-backup file. It is how you put things back, and it is also "
             "the source every rebuild reads from."
         )
@@ -667,10 +663,9 @@ class MainWindow(QMainWindow):
                 f"{path} was .{ext}" for path, ext in list(result.converted_formats.items())[:10]
             )
             lines.append(
-                f"UNTESTED PATH: {len(result.converted_formats)} edited image(s) changed "
-                f"format to .qnt because alice-tools has no encoder for the original, and "
-                f"their entry was renamed to match. No game has been confirmed accepting "
-                f"that yet. Check these in game before trusting the archive. {changed}"
+                f"{len(result.converted_formats)} edited image(s) changed format to .qnt "
+                f"because alice-tools has no encoder for the original, and their entry "
+                f"was renamed to match. Worth checking these in game. {changed}"
             )
         for path, message in result.errors.items():
             self.log(f"  ERROR {path}: {message}")

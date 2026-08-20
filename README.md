@@ -11,6 +11,14 @@ and verify the result.
 
 Requires Python 3.11 or newer, and a copy of nightly alice.exe from [nunuhara/alice-tools](https://github.com/nunuhara/alice-tools). Please use the latest nightly version there NOT 0.13.0
 
+## Screenshots
+
+[![Extract and repack tab](https://i.postimg.cc/zN4VkYmB/alicecensor-ss1-repack.png)](https://postimg.cc/6TqJcMZY)
+
+[![Gallery with thumbnails and filters](https://i.postimg.cc/Fvw7xXtc/alicecensor-ss2-gallery.png)](https://postimg.cc/G9twKXDZ)
+
+[![Region editor with layers](https://i.postimg.cc/S4HJGb0x/alicecensor-ss3-editor.png)](https://postimg.cc/9z05bL9b)
+
 ## Features
 
 **Extract and repack**
@@ -263,13 +271,5 @@ The suite runs offscreen (`QT_QPA_PLATFORM=offscreen`) and needs neither a displ
 
 ## License
 
-GPL-3.0, see [LICENSE](LICENSE).
-
-Chosen to match the ecosystem this lives in. alice-tools and the libsys4 it is built on are
-GPL-2.0-or-later, and the ALD reader and writer here were written against that project's source
-and the published format notes, so copyleft is both the safe and the neighbourly choice.
-GPL-2.0-or-later code can be combined into a GPL-3.0 work, so nothing conflicts.
-
-alice-tools itself is neither bundled nor modified here. It is a separate program this one
-invokes, and it keeps its own license.
+GPL-3.0, see [LICENSE](LICENSE). alice-tools is a separate program and keeps its own.
 

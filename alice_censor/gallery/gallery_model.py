@@ -26,7 +26,7 @@ from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 
 from ..grouping import GroupInfo
 from ..manifest import Manifest
-from ..paths import basename, resolve_fs_path, split_dir_and_stem
+from ..paths import basename, natural_sort_key, resolve_fs_path, split_dir_and_stem
 from ..project import ImageRecord, ImageStatus, ProjectState
 from .thumbnail_cache import THUMBNAIL_SIZE, ThumbnailCache
 from .thumbnail_worker import ThumbnailSignals, ThumbnailTask
@@ -81,7 +81,11 @@ class GalleryModel(QAbstractListModel):
         self._path_to_group: dict[str, str] = {
             member: g.key for g in groups.values() for member in g.members
         }
-        self._all_paths: list[str] = manifest.paths()
+        # Sorted for display only. The manifest keeps its own order,
+        # which is the order files sit in the archive, and the export and
+        # repack paths depend on that. Archive order puts a scene's frames
+        # in no useful sequence, so the grid sorts by name instead.
+        self._all_paths: list[str] = sorted(manifest.paths(), key=natural_sort_key)
         self._filtered: list[str] = list(self._all_paths)
         self._row_of: dict[str, int] = {p: i for i, p in enumerate(self._filtered)}
 

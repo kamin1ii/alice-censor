@@ -600,3 +600,24 @@ def test_setting_a_new_model_shuts_the_previous_one_down(qapp, tmp_path):
     assert first._cancelled.is_set(), "the outgoing model must stop thumbnailing"
     assert not second._cancelled.is_set(), "the incoming one must not"
     second.shutdown()
+
+
+def test_the_grid_is_sorted_by_name_not_by_archive_order(qapp, tmp_path):
+    """A manifest lists files in the order they sit in the archive, which
+    puts a scene's frames in no useful sequence."""
+    archive_order = ["h01.png", "h04.png", "h10.png", "h02.png", "h03.png"]
+    project, manifest = _make_project_and_manifest(tmp_path, archive_order)
+    model = GalleryModel(project, manifest, compute_groups(manifest), tmp_path / "thumbs")
+
+    assert manifest.paths() == archive_order, "the manifest keeps its own order"
+    shown = [model.path_at(i) for i in range(model.rowCount())]
+    assert shown == ["h01.png", "h02.png", "h03.png", "h04.png", "h10.png"]
+
+
+def test_the_grid_orders_numbers_by_value(qapp, tmp_path):
+    project, manifest = _make_project_and_manifest(tmp_path, ["w128.png", "w90.png", "w170.png"])
+    model = GalleryModel(project, manifest, compute_groups(manifest), tmp_path / "thumbs")
+
+    assert [model.path_at(i) for i in range(model.rowCount())] == [
+        "w90.png", "w128.png", "w170.png"
+    ]

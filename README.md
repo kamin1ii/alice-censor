@@ -38,6 +38,8 @@ Requires Python 3.11 or newer, and a copy of nightly alice.exe from [nunuhara/al
 - Virtualized thumbnail grid over every extracted image, so it stays responsive at 1300+ files.
 - Tag each image as unreviewed, flagged for censor, reviewed clean, or needs manual edit.
 - Filter by folder tree, status, scene group, filename, and whether the image has censor edits.
+- Sorted by name, with numbers ordered by value, so a scene reads H01 to H26 in sequence
+  rather than in the order the archive happens to store them.
 - Thumbnails are cached on disk and show the censored result, not the raw source.
 - Auto-flag explicit scenes by naming convention (H01 through H13, 挿入, 射精, and similar) for
   archives whose filenames carry that signal. Only unreviewed images are touched, so it never
@@ -224,7 +226,7 @@ alice_censor/
   gui/              Main window, project dialog, background workers
   gallery/          Thumbnail grid, model, folder tree, disk thumbnail cache
   editor/           Region canvas, layer panel, batch apply, sticker picker
-tests/              304 tests, no alice.exe or real archives required
+tests/              313 tests, no alice.exe or real archives required
 main.py             Entry point for the frozen build
 alice-censor.spec   PyInstaller build definition
 build.ps1           Test, build, verify the exe launches

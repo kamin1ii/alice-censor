@@ -18,6 +18,7 @@ Two different needs follow from this, and must not be conflated.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path, PurePosixPath
 
 SEPARATORS = ("/", "\\", "／")
@@ -55,3 +56,35 @@ def resolve_fs_path(src_dir: Path, manifest_path: str) -> Path:
     This is a plain join, deliberately *not* going through
     split_dir_and_stem or normalize_separators."""
     return src_dir / manifest_path
+
+
+# Runs of digits, captured so re.split marks them at odd indices.
+_DIGIT_RUN_RE = re.compile(r"(\d+)")
+
+
+def natural_sort_key(path: str) -> tuple:
+    r"""Sort key that orders embedded numbers by value, not by digit.
+
+    Archives list files in whatever order they were packed, which puts a
+    scene's frames in no useful sequence at all. Sorting by name fixes
+    that, but plain text ordering breaks as soon as the numbering is not
+    zero padded to a fixed width, putting 幅９０ after 幅１２８ because the
+    character 9 is greater than 1.
+
+    Fullwidth digits come out right without special handling. `\d` matches
+    any Unicode decimal, and int() reads them, so ０１ and 01 both become 1.
+
+    A digit run is identified by its position rather than by isdigit(),
+    which is true for characters like ² that int() then refuses.
+    """
+    normalized = normalize_separators(path)
+    key: list[tuple[int, int, str]] = []
+    for i, part in enumerate(_DIGIT_RUN_RE.split(normalized)):
+        if not part:
+            continue
+        # Uniform tuple shape so no comparison ever comes down to int vs str.
+        key.append((1, int(part), "") if i % 2 else (0, 0, part))
+    # Numbers compare by value, so a1 and a01 tie. Break it on the original
+    # text, otherwise two distinct files order by luck of the input.
+    key.append((2, 0, normalized))
+    return tuple(key)

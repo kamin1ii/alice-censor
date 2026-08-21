@@ -72,6 +72,22 @@ Requires Python 3.11 or newer, and a copy of nightly alice.exe from [nunuhara/al
 - The project file is written atomically (temp file plus rename), so a crash mid-save cannot
   corrupt it.
 
+## Sharing your censor work
+
+**File > Export Censor Work…** writes a zip holding your review statuses, every censor layer you
+have drawn, and the stickers those layers use. No images and no paths, so it stays small: a Rance
+03 project with 771 layers across 529 images comes to about 5 MB.
+
+**File > Import Censor Work…** applies one to the project you have open. Images are matched by the
+path they have inside the archive, so both sides need to come from the same archive. Anything that
+does not line up is reported and skipped rather than invented. Stickers are unpacked into your own
+library, and a name you already have is left alone rather than overwritten.
+
+A project file on its own is not shareable, which is what this exists to solve. Every path in it
+is absolute and points at one machine, and its overlay layers name stickers that live in that
+machine's library. On a real project that is most of the work, since 668 of those 771 layers are
+overlays.
+
 ## Rebuilding .ald archives (experimental)
 
 > **This is new and lightly tested.** alice-tools cannot write `.ald` at all, so Alice Censor
@@ -223,10 +239,11 @@ alice_censor/
   stickers.py       The managed sticker library
   paths.py          Archive-internal path handling
   session.py        The open project, its manifest and its tools as one value
+  share.py          Export and import censor work as a shareable bundle
   gui/              Main window, project dialog, background workers
   gallery/          Thumbnail grid, model, folder tree, disk thumbnail cache
   editor/           Region canvas, layer panel, batch apply, sticker picker
-tests/              314 tests, no alice.exe or real archives required
+tests/              330 tests, no alice.exe or real archives required
 main.py             Entry point for the frozen build
 alice-censor.spec   PyInstaller build definition
 build.ps1           Test, build, verify the exe launches

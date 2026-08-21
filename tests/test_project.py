@@ -1,4 +1,12 @@
-from alice_censor.project import CensorLayer, ImageRecord, ImageStatus, ProjectState
+import pytest
+
+from alice_censor.project import (
+    SCHEMA_VERSION,
+    CensorLayer,
+    ImageRecord,
+    ImageStatus,
+    ProjectState,
+)
 
 
 def test_round_trip_save_and_load(tmp_path):
@@ -62,3 +70,35 @@ def test_save_without_path_raises():
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def test_a_project_from_a_newer_build_is_refused_not_silently_stripped(tmp_path):
+    """from_dict drops fields it does not know and the app saves straight
+    after almost every action, so opening one of these would rewrite it
+    without whatever the newer version put there."""
+    import json
+
+    from alice_censor.project import ProjectTooNew
+
+    p = tmp_path / "future.acproj.json"
+    p.write_text(json.dumps({
+        "schema_version": SCHEMA_VERSION + 1,
+        "images": {},
+        "something_new": {"kept": True},
+    }), encoding="utf-8")
+
+    with pytest.raises(ProjectTooNew, match="newer version"):
+        ProjectState.load(p)
+
+    assert "something_new" in json.loads(p.read_text(encoding="utf-8")), (
+        "and refusing must leave the file exactly as it was"
+    )
+
+
+def test_a_project_from_this_build_or_older_opens_normally(tmp_path):
+    import json
+
+    for version in (SCHEMA_VERSION, SCHEMA_VERSION - 1):
+        p = tmp_path / f"v{version}.acproj.json"
+        p.write_text(json.dumps({"schema_version": version, "images": {}}), encoding="utf-8")
+        assert ProjectState.load(p).schema_version == version

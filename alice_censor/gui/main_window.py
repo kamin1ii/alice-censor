@@ -27,6 +27,7 @@ from ..project import ImageRecord, ImageStatus, ProjectState
 from ..ald_repack import find_sibling_volumes, repack_ald_in_place, verify_ald
 from ..scanning import scan_and_sync
 from ..session import OpenProject
+from ..share import BundleError, apply_bundle, export_bundle, read_bundle
 from ..stickers import make_sticker_resolver
 from ..verify import VerifyResult, verify_archive_contents
 from .icon import ICON_PATH
@@ -100,6 +101,11 @@ class MainWindow(QMainWindow):
         self._save_action.setEnabled(False)
         self._save_as_action = file_menu.addAction("Save Project &As…", self.save_project_as)
         self._save_as_action.setEnabled(False)
+        file_menu.addSeparator()
+        self._export_action = file_menu.addAction("&Export Censor Work…", self.export_bundle)
+        self._export_action.setEnabled(False)
+        self._import_action = file_menu.addAction("&Import Censor Work…", self.import_bundle)
+        self._import_action.setEnabled(False)
         file_menu.addSeparator()
         file_menu.addAction("E&xit", self.close)
 
@@ -293,6 +299,113 @@ class MainWindow(QMainWindow):
         if self._save_project(path):
             self.log(f"Saved project: {project.project_file}")
 
+    def export_bundle(self) -> None:
+        """Write the review work to a zip someone else can apply.
+
+        Carries statuses, layers and the stickers those layers use, with
+        every local path stripped out. Not the images, which the recipient
+        already has in their own copy of the archive.
+        """
+        if self.session is None:
+            return
+        project = self.session.project
+        suggested = f"{Path(project.archive_path).stem}-censor.zip"
+        start = str(Path(project.project_file).parent / suggested) if project.project_file else suggested
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Censor Work", start, filter="Alice Censor bundles (*.zip)"
+        )
+        if not path:
+            return
+        try:
+            included = export_bundle(project, path)
+        except OSError as e:
+            QMessageBox.critical(self, "Export failed", str(e))
+            return
+
+        edited = sum(1 for rec in project.images.values() if rec.layers)
+        layers = sum(len(rec.layers) for rec in project.images.values())
+        message = (
+            f"Exported {layers} layer(s) across {edited} image(s), "
+            f"with {len(included)} sticker(s).\n\n{path}\n\n"
+            f"Whoever opens this needs their own project made from the same "
+            f"archive. It carries no images and no paths."
+        )
+        self.log(message)
+        QMessageBox.information(self, "Exported", message)
+
+    def import_bundle(self) -> None:
+        """Apply someone else's review work to this project.
+
+        Matched by the path each image has inside the archive, so both
+        sides have to come from the same archive for anything to line up.
+        A mismatch shows as unmatched entries rather than as an error.
+        """
+        if self.session is None:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Censor Work", "", filter="Alice Censor bundles (*.zip)"
+        )
+        if not path:
+            return
+
+        project = self.session.project
+        try:
+            bundle = read_bundle(path)
+        except (BundleError, OSError) as e:
+            QMessageBox.critical(self, "Cannot read that bundle", str(e))
+            return
+
+        already = sum(1 for rec in project.images.values() if rec.layers)
+        warning = ""
+        if bundle.archive_name and bundle.archive_name != Path(project.archive_path).name:
+            warning = (
+                f"\n\nIt was made from {bundle.archive_name}, and this project is "
+                f"{Path(project.archive_path).name}. Anything that does not line up "
+                f"will be skipped."
+            )
+        reply = QMessageBox.question(
+            self,
+            "Import censor work",
+            f"Apply {bundle.layer_count} layer(s) across {bundle.edited_count} image(s), "
+            f"plus {len(bundle.stickers)} sticker(s)?\n\n"
+            f"This replaces the layers on any image the bundle covers. "
+            f"{already} image(s) here already have layers.{warning}",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        try:
+            result = apply_bundle(path, project)
+        except (BundleError, OSError) as e:
+            QMessageBox.critical(self, "Import failed", str(e))
+            return
+
+        self._autosave()
+        lines = [
+            f"Imported {len(result.applied)} image(s) from {Path(path).name}, "
+            f"copying {len(result.stickers_copied)} new sticker(s)."
+        ]
+        if result.unmatched:
+            lines.append(
+                f"{len(result.unmatched)} image(s) in the bundle are not in this project, "
+                f"so they were skipped. First few: " + ", ".join(result.unmatched[:5])
+            )
+        if result.missing_stickers:
+            lines.append(
+                f"{len(result.missing_stickers)} sticker(s) a layer needs were not in the "
+                f"bundle, so those layers will not render until you supply them: "
+                + ", ".join(result.missing_stickers)
+            )
+        message = "\n\n".join(lines)
+        self.log(message)
+
+        if self.gallery_widget.model is not None:
+            for changed in result.applied:
+                self.gallery_widget.model.notify_layers_changed(changed)
+        QMessageBox.information(self, "Imported", message)
+
     def _set_project_actions_enabled(self, enabled: bool) -> None:
         """Enable or disable everything that only makes sense with a
         project open. Kept apart from _refresh_summary so that redrawing
@@ -303,6 +416,8 @@ class MainWindow(QMainWindow):
         self.repack_button.setEnabled(enabled and self._repack_blocked_reason() is None)
         self._save_action.setEnabled(enabled)
         self._save_as_action.setEnabled(enabled)
+        self._export_action.setEnabled(enabled)
+        self._import_action.setEnabled(enabled)
 
     def _tools_usable(self, session: OpenProject) -> bool:
         """Check the alice.exe a saved project points at before using it.

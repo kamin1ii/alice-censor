@@ -19,6 +19,14 @@ from typing import Any
 SCHEMA_VERSION = 1
 
 
+class ProjectTooNew(ValueError):
+    """Raised when a project file comes from a newer build than this one.
+
+    Refused rather than opened, because loading drops unknown fields and
+    the app saves straight after, so the newer data would be gone.
+    """
+
+
 class ImageStatus(str, Enum):
     UNREVIEWED = "unreviewed"
     FLAGGED = "flagged"          # flagged for censor
@@ -224,6 +232,19 @@ class ProjectState:
         target = Path(path)
         with open(target, encoding="utf-8") as f:
             data = json.load(f)
+        found = data.get("schema_version", SCHEMA_VERSION)
+        if found > SCHEMA_VERSION:
+            # from_dict ignores fields it does not know, and the app saves
+            # after almost every action, so opening this would quietly
+            # rewrite the file without whatever the newer build put there.
+            # Losing someone's work to an out of date copy is worse than
+            # refusing to open it.
+            raise ProjectTooNew(
+                f"{target.name} was made by a newer version of Alice Censor "
+                f"(project format {found}, this build understands {SCHEMA_VERSION}).\n\n"
+                f"Opening it here would save it back without the parts this "
+                f"version does not recognise. Update Alice Censor to open it."
+            )
         state = cls.from_dict(data)
         state.project_file = target
         return state

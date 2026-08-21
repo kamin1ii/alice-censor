@@ -143,6 +143,37 @@ pip install -e .
 
 If installed as a package, the `alice-censor` command does the same thing.
 
+## Windows SmartScreen
+
+The first time you run the exe, Windows is likely to say:
+
+> Microsoft Defender SmartScreen prevented an unrecognised app from starting.
+
+Click **More info**, then **Run anyway**.
+
+That warning is about reputation, not about anything found in the file. SmartScreen trusts an
+executable once it has been signed by a known publisher, or once enough people have downloaded
+that exact file without trouble. This one is unsigned and freshly built, so it has neither.
+
+Two things make it worse here rather than better. Reputation for an unsigned program attaches to
+the exact file, so **every new release starts from zero again**, and PyInstaller programs get
+flagged more readily than most because the same packaging is used by things that are not
+friendly.
+
+If you would rather check the download yourself, every release ships an `AliceCensor.exe.sha256`
+file next to the exe:
+
+```
+Get-FileHash .\AliceCensor.exe -Algorithm SHA256
+```
+
+Compare that against the published value. The build script prints the same hash when it builds,
+and CI computes it on a clean machine.
+
+The only real cure is a code signing certificate, which costs a few hundred a year and has to be
+bought as a person or a company. Until then the warning is expected, and worth saying plainly to
+anyone you hand the file to.
+
 ## Changing the icon
 
 ```

@@ -63,14 +63,27 @@ jobs:
           # usually because a Qt release renamed something.
           if ($mb -gt 60) { throw ("exe is {0:N1} MB, far larger than expected" -f $mb) }
 
+      - name: Write a checksum
+        # The exe is unsigned, so this is the only way a downloader can
+        # confirm the file arrived intact.
+        shell: pwsh
+        run: |
+          $h = (Get-FileHash .\dist\AliceCensor.exe -Algorithm SHA256).Hash
+          Set-Content .\dist\AliceCensor.exe.sha256 "$h *AliceCensor.exe" -Encoding ascii
+          Write-Host $h
+
       - uses: actions/upload-artifact@v4
         with:
           name: AliceCensor-exe
-          path: dist/AliceCensor.exe
+          path: |
+            dist/AliceCensor.exe
+            dist/AliceCensor.exe.sha256
           if-no-files-found: error
 
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/AliceCensor.exe
+          files: |
+            dist/AliceCensor.exe
+            dist/AliceCensor.exe.sha256

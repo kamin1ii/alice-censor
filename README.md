@@ -247,7 +247,7 @@ alice_censor/
   gui/              Main window, project dialog, background workers
   gallery/          Thumbnail grid, model, folder tree, disk thumbnail cache
   editor/           Region canvas, layer panel, batch apply, sticker picker
-tests/              334 tests, no alice.exe or real archives required
+tests/              339 tests, no alice.exe or real archives required
 main.py             Entry point for the frozen build
 alice-censor.spec   PyInstaller build definition
 build.ps1           Test, build, verify the exe launches
@@ -294,6 +294,11 @@ The suite runs offscreen (`QT_QPA_PLATFORM=offscreen`) and needs neither a displ
   a real scene boundary detector, because those filenames carry no naming signal at all.
 - Auto-flagging is a naming heuristic, not a content classifier. It is a first pass to save time,
   and manual review is still the thing that decides.
+- Some images are stored as a difference against another image (a `.dcf`). Editing one used to
+  produce a black screen in game, because the encoder blanks the matching parts including their
+  transparency while AliceSoft's own difference images carry none. Alice Censor now writes an
+  edited difference image out whole, which fixes it at the cost of some archive size. Untouched
+  ones are copied through as their original bytes and are unaffected.
 - Repacking rewrites your game archive in place. Keep the automatic `.orig-backup`. For an
   `.afa` it is your safety net, and for an `.ald` it is also the source every rebuild reads from,
   which is what stops a second repack stacking a censor on top of the first one.

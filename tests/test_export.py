@@ -253,3 +253,97 @@ def test_the_packed_order_is_archive_order_not_the_gallery_order(tmp_path):
     assert packed != sorted(archive_order, key=natural_sort_key), (
         "and the sorted order must be genuinely different, or this proves nothing"
     )
+
+
+# ===== difference images (DCF)
+#
+# A DCF stores a map of which 16x16 chunks differ from a base image, plus
+# an image holding those chunks. Re-encoding one produced a black screen in
+# Rance 03: dcf_encode blanks the matching chunks including their alpha,
+# libsys4's QNT writer always emits an alpha plane, and AliceSoft's own
+# difference images have none, so the blanked chunks come back transparent
+# instead of opaque.
+
+
+def _diff_manifest(tmp_path, names, diff_rows):
+    """Manifest where `diff_rows` maps a path to the base it differs from."""
+    out_dir = tmp_path / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        Image.new("RGB", (50, 50), (255, 255, 255)).save(out_dir / name, "PNG")
+    lines = ["#ALICEPACK --src-dir=out", "archive.afa"]
+    for name in names:
+        if name in diff_rows:
+            lines.append(f"{name},dcf,{diff_rows[name]}")
+        else:
+            lines.append(f"{name},qnt")
+    (tmp_path / "manifest.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return parse_manifest(tmp_path / "manifest.txt")
+
+
+def test_an_edited_difference_image_is_written_whole(tmp_path):
+    manifest = _diff_manifest(tmp_path, ["a.png", "b.png"], {"b.png": "a.png"})
+    project = ProjectState(output_dir=str(tmp_path / "export"))
+    project.images["b.png"] = ImageRecord(layers=[_solid_layer()])
+
+    result = render_export(project, manifest)
+
+    assert result.flattened_paths == ["b.png"]
+    row = next(e for e in parse_manifest(result.manifest_path).entries if e.path == "b.png")
+    assert row.dst_format == "qnt", "packed whole, not as a difference"
+    assert row.extra is None, "a whole image has no base to point at"
+
+
+def test_an_untouched_difference_image_is_left_as_it_was(tmp_path):
+    """It is copied through as its original bytes and never re-encoded, so
+    it keeps working exactly as before."""
+    manifest = _diff_manifest(tmp_path, ["a.png", "b.png"], {"b.png": "a.png"})
+    project = ProjectState(output_dir=str(tmp_path / "export"))
+
+    result = render_export(project, manifest)
+
+    assert result.flattened_paths == []
+    row = next(e for e in parse_manifest(result.manifest_path).entries if e.path == "b.png")
+    assert row.dst_format == "dcf"
+    assert row.extra == "a.png", "its base reference must survive"
+
+
+def test_flattening_does_not_disturb_ordinary_edited_images(tmp_path):
+    manifest = _diff_manifest(tmp_path, ["a.png", "b.png"], {})
+    project = ProjectState(output_dir=str(tmp_path / "export"))
+    project.images["a.png"] = ImageRecord(layers=[_solid_layer()])
+
+    result = render_export(project, manifest)
+
+    assert result.flattened_paths == []
+    row = next(e for e in parse_manifest(result.manifest_path).entries if e.path == "a.png")
+    assert row.dst_format == "qnt"
+
+
+def test_the_row_count_never_changes(tmp_path):
+    """Every row still has to be packed, whatever format it ends up in."""
+    manifest = _diff_manifest(tmp_path, ["a.png", "b.png", "c.png"],
+                              {"b.png": "a.png", "c.png": "a.png"})
+    project = ProjectState(output_dir=str(tmp_path / "export"))
+    project.images["b.png"] = ImageRecord(layers=[_solid_layer()])
+
+    result = render_export(project, manifest)
+
+    assert len(parse_manifest(result.manifest_path).entries) == 3
+
+
+def test_the_stale_cache_entry_under_the_old_format_is_removed(tmp_path):
+    """The row's format changed, so pack looks for a different name in the
+    cache. A leftover under the old name would be packed verbatim."""
+    manifest = _diff_manifest(tmp_path, ["a.png", "b.png"], {"b.png": "a.png"})
+    project = ProjectState(output_dir=str(tmp_path / "export"))
+    project.images["b.png"] = ImageRecord(layers=[_solid_layer()])
+    cache = tmp_path / "export" / "alice-tools-cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    (cache / "b.dcf").write_bytes(b"stale difference")
+    (cache / "b.qnt").write_bytes(b"stale whole image")
+
+    render_export(project, manifest)
+
+    assert not (cache / "b.dcf").exists(), "the old-format entry must go"
+    assert not (cache / "b.qnt").exists(), "and so must the new-format one"

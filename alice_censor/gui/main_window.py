@@ -893,6 +893,12 @@ class MainWindow(QMainWindow):
             f"({len(export_result.preserved_paths)} of them keeping their original bytes), "
             f"{len(export_result.errors)} error(s)."
         )
+        if export_result.flattened_paths:
+            self.log(
+                f"{len(export_result.flattened_paths)} edited image(s) were stored as a "
+                f"difference against another image and are written out whole instead. "
+                f"Re-encoding a difference makes the game render it black."
+            )
         for path, message in export_result.errors.items():
             self.log(f"  ERROR rendering {path}: {message}")
 

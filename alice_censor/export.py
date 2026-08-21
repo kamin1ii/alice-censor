@@ -15,12 +15,12 @@ from __future__ import annotations
 import os
 import shutil
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 
-from .manifest import Manifest, write_manifest
+from .manifest import Manifest, ManifestEntry, write_manifest
 from .paths import resolve_fs_path
 from .project import ProjectState
 from .rendering import RenderError, render_layers
@@ -37,6 +37,9 @@ class ExportResult:
     # pack cache, so they go into the archive exactly as they came out
     # rather than being decoded and re-encoded.
     preserved_paths: list[str] = field(default_factory=list)
+    # Edited images that were stored as a difference against another image
+    # and are now written out whole. See _flatten_if_edited_diff.
+    flattened_paths: list[str] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)  # path -> error message
     manifest_path: Path | None = None
 
@@ -78,6 +81,7 @@ def render_export(
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     result = ExportResult()
+    export_entries: list[ManifestEntry] = []
     for entry in manifest.entries:
         path = entry.path
         if on_progress:
@@ -94,7 +98,14 @@ def render_export(
         record = project.images.get(path)
         layers = [layer for layer in record.layers if layer.enabled] if record else []
 
-        cache_file = _cache_path(cache_dir, entry)
+        export_entry = _flatten_if_edited_diff(entry, bool(layers))
+        if export_entry is not entry:
+            result.flattened_paths.append(path)
+            # The row's format changed, so the name pack looks for in the
+            # cache changed with it. Clear the old one too.
+            _cache_path(cache_dir, entry).unlink(missing_ok=True)
+        export_entries.append(export_entry)
+        cache_file = _cache_path(cache_dir, export_entry)
 
         if not layers:
             try:
@@ -126,7 +137,7 @@ def render_export(
 
     manifest_path = out_dir / EXPORT_MANIFEST_NAME
     write_manifest(
-        manifest,
+        replace(manifest, entries=export_entries),
         manifest_path,
         src_dir=out_dir,
         cache_dir=cache_dir,
@@ -172,3 +183,36 @@ def _seed_cache_entry(raw_cache_dir: Path | None, cache_file: Path, source_file:
     stamp = max(time.time(), source_file.stat().st_mtime + 2)
     os.utime(cache_file, (stamp, stamp))
     return True
+
+
+# A DCF is a difference against another image: a map of which 16x16 chunks
+# changed, plus an image holding those chunks. Re-encoding one is where
+# this goes wrong.
+DIFF_FORMAT = "dcf"
+# What an edited difference image is written as instead. Lossless, and the
+# only format alice-tools can encode in memory.
+FLATTENED_FORMAT = "qnt"
+
+
+def _flatten_if_edited_diff(entry: ManifestEntry, edited: bool) -> ManifestEntry:
+    """Store an edited difference image whole instead of as a difference.
+
+    dcf_encode blanks the chunks that match the base, zeroing their alpha
+    along with everything else, and libsys4's QNT writer always emits an
+    alpha plane. AliceSoft's own difference images carry no alpha plane at
+    all, so those blanked chunks come back opaque there and transparent
+    here. Rance 03 renders the result as a black screen.
+
+    Confirmed against the game: the main menu and eleven other images went
+    black after a repack, and packing the same pixels as a plain image
+    fixed them. Nothing is lost by doing it, since a difference is only a
+    size optimisation, and the image packed is identical either way.
+
+    Only edited entries are touched. An untouched difference image is
+    copied through as its original bytes and never re-encoded, so it keeps
+    working exactly as it did.
+    """
+    if not edited or (entry.dst_format or "").lower() != DIFF_FORMAT:
+        return entry
+    # `extra` names the base image, which a whole image has no use for.
+    return replace(entry, dst_format=FLATTENED_FORMAT, extra=None)

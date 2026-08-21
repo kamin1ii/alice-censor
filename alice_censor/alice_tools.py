@@ -4,16 +4,23 @@ Automates the manual loop this whole app exists to speed up.
 
     alice ar extract --manifest=manifest.txt -o out archive.afa
     <edit the extracted PNGs>
-    <empty the cache directory>
     alice ar pack manifest.txt
 
-The one non-obvious step is cache invalidation. alice-tools caches
-converted image data alongside the manifest (in the directory named by the
-manifest's --cache-dir option, e.g. `out/alice-tools-cache`), keyed by file
-path. If that cache is stale, `ar pack` silently reuses the old cached
-conversion instead of picking up an edited PNG. The fix is to delete the
-*contents* of the cache directory (not the directory itself) before every
-repack. See `clear_cache_dir` and `AliceTools.repack`.
+The one non-obvious step is the pack cache. alice-tools keeps converted
+image data in the directory named by the manifest's --cache-dir option,
+e.g. `out/alice-tools-cache`, keyed by file path, and packs a cache entry
+verbatim whenever it is newer than its source rather than converting
+again. A stale entry therefore means an edited image never reaches the
+archive, silently.
+
+Emptying the whole cache before every pack is the blunt way to avoid
+that, and `clear_cache_dir` still does it for any caller that wants it.
+The export path takes a sharper approach instead. It seeds the cache with
+the original bytes of every file it did not touch and deletes the entry
+for every file it re-rendered, then packs with `clear_cache=False`. Same
+guarantee about edits landing, and untouched images go back into the
+archive as the exact bytes they came out as rather than being decoded and
+re-encoded. See export.render_export and AliceTools.repack.
 """
 
 from __future__ import annotations

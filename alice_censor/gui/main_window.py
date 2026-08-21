@@ -709,7 +709,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Failed to prepare export manifest", str(e))
             return
 
-        self.log("Repacking from rendered export (clearing cache first)...")
+        self.log("Repacking from the rendered export...")
 
         def job(on_output):
             # render_export curated this cache, seeding original bytes for

@@ -209,7 +209,7 @@ re-extracting without losing a single review decision or region.
 ```
 alice_censor/
   manifest.py       Parser and writer for alice-tools ALICEPACK manifests
-  alice_tools.py    Subprocess wrapper over the alice CLI, cache clearing, backups
+  alice_tools.py    Subprocess wrapper over the alice CLI, archive backups
   project.py        The .acproj.json schema: statuses, groups, censor layers
   scanning.py       Reconciles a manifest against saved state and files on disk
   grouping.py       Scene grouping, by naming convention or numeric proximity

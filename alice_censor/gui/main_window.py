@@ -50,8 +50,8 @@ class MainWindow(QMainWindow):
         # experimental, lands in the log once rather than on every summary
         # refresh.
         self._warned_repack_notice = False
-        # Set when Import Censor Work was chosen with nothing open, so
-        # the bundle can be applied once New Project finishes extracting.
+        # Set when Open Shared Project was chosen with nothing open, so
+        # it can be applied once New Project finishes extracting.
         self._pending_bundle: str | None = None
         # Tracks whether the open project has changes not yet persisted to
         # its project_file. _autosave sets this before writing and clears
@@ -105,12 +105,12 @@ class MainWindow(QMainWindow):
         self._save_as_action = file_menu.addAction("Save Project &As…", self.save_project_as)
         self._save_as_action.setEnabled(False)
         file_menu.addSeparator()
-        self._export_action = file_menu.addAction("&Export Censor Work…", self.export_bundle)
+        self._export_action = file_menu.addAction("&Share Project…", self.export_bundle)
         self._export_action.setEnabled(False)
         # Left enabled with no project open. Being handed a bundle is
         # exactly the case where you have not extracted anything yet, and
         # a greyed out menu item explains none of that.
-        self._import_action = file_menu.addAction("&Import Censor Work…", self.import_bundle)
+        self._import_action = file_menu.addAction("&Open Shared Project…", self.import_bundle)
         file_menu.addSeparator()
         file_menu.addAction("E&xit", self.close)
 
@@ -309,7 +309,7 @@ class MainWindow(QMainWindow):
             self.log(f"Saved project: {project.project_file}")
 
     def export_bundle(self) -> None:
-        """Write the review work to a zip someone else can apply.
+        """Package this project so someone else can apply it.
 
         Carries statuses, layers and the stickers those layers use, with
         every local path stripped out. Not the images, which the recipient
@@ -321,14 +321,14 @@ class MainWindow(QMainWindow):
         suggested = f"{Path(project.archive_path).stem}-censor.zip"
         start = str(Path(project.project_file).parent / suggested) if project.project_file else suggested
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export Censor Work", start, filter="Alice Censor bundles (*.zip)"
+            self, "Share Project", start, filter="Shared Alice Censor projects (*.zip)"
         )
         if not path:
             return
         try:
             included = export_bundle(project, path)
         except OSError as e:
-            QMessageBox.critical(self, "Export failed", str(e))
+            QMessageBox.critical(self, "Could not share the project", str(e))
             return
 
         edited = sum(1 for rec in project.images.values() if rec.layers)
@@ -340,17 +340,17 @@ class MainWindow(QMainWindow):
             f"archive. It carries no images and no paths."
         )
         self.log(message)
-        QMessageBox.information(self, "Exported", message)
+        QMessageBox.information(self, "Project shared", message)
 
     def import_bundle(self) -> None:
-        """Apply someone else's review work to this project.
+        """Apply a shared project on top of this one.
 
         Matched by the path each image has inside the archive, so both
         sides have to come from the same archive for anything to line up.
         A mismatch shows as unmatched entries rather than as an error.
         """
         path, _ = QFileDialog.getOpenFileName(
-            self, "Import Censor Work", "", filter="Alice Censor bundles (*.zip)"
+            self, "Open Shared Project", "", filter="Shared Alice Censor projects (*.zip)"
         )
         if not path:
             return
@@ -361,18 +361,18 @@ class MainWindow(QMainWindow):
         self._apply_bundle_file(path)
 
     def _apply_bundle_file(self, path: str) -> None:
-        """Confirm and apply a bundle to the open project.
+        """Confirm and apply a shared project to the open one.
 
-        Split out because a bundle can arrive two ways, chosen against an
-        open project or chosen with nothing open and applied once New
-        Project has finished extracting.
+        Split out because it can arrive two ways, chosen against an open
+        project or chosen with nothing open and applied once New Project
+        has finished extracting.
         """
         assert self.session is not None
         project = self.session.project
         try:
             bundle = read_bundle(path)
         except (BundleError, OSError) as e:
-            QMessageBox.critical(self, "Cannot read that bundle", str(e))
+            QMessageBox.critical(self, "Not a shared project", str(e))
             return
 
         already = sum(1 for rec in project.images.values() if rec.layers)
@@ -385,10 +385,10 @@ class MainWindow(QMainWindow):
             )
         reply = QMessageBox.question(
             self,
-            "Import censor work",
+            "Open shared project",
             f"Apply {bundle.layer_count} layer(s) across {bundle.edited_count} image(s), "
             f"plus {len(bundle.stickers)} sticker(s)?\n\n"
-            f"This replaces the layers on any image the bundle covers. "
+            f"This replaces the layers on any image it covers. "
             f"{already} image(s) here already have layers.{warning}",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
@@ -399,7 +399,7 @@ class MainWindow(QMainWindow):
         try:
             result = apply_bundle(path, project)
         except (BundleError, OSError) as e:
-            QMessageBox.critical(self, "Import failed", str(e))
+            QMessageBox.critical(self, "Could not open the shared project", str(e))
             return
 
         self._autosave()
@@ -409,13 +409,13 @@ class MainWindow(QMainWindow):
         ]
         if result.unmatched:
             lines.append(
-                f"{len(result.unmatched)} image(s) in the bundle are not in this project, "
+                f"{len(result.unmatched)} image(s) in it are not in this project, "
                 f"so they were skipped. First few: " + ", ".join(result.unmatched[:5])
             )
         if result.missing_stickers:
             lines.append(
                 f"{len(result.missing_stickers)} sticker(s) a layer needs were not in the "
-                f"bundle, so those layers will not render until you supply them: "
+                f"shared project, so those layers will not render until you supply them: "
                 + ", ".join(result.missing_stickers)
             )
         message = "\n\n".join(lines)
@@ -424,33 +424,33 @@ class MainWindow(QMainWindow):
         if self.gallery_widget.model is not None:
             for changed in result.applied:
                 self.gallery_widget.model.notify_layers_changed(changed)
-        QMessageBox.information(self, "Imported", message)
+        QMessageBox.information(self, "Shared project applied", message)
 
     def _offer_project_for_bundle(self, bundle_path: str) -> None:
-        """Explain what a bundle needs, and offer to set it up now.
+        """Explain what a shared project needs, and offer to set it up.
 
-        A bundle carries censor work, not images, so it can only be
+        It carries the review work, not the images, so it can only be
         applied to images you already have. Being sent one is the common
         way to arrive here with nothing open, so rather than refusing,
-        this walks into New Project and applies the bundle once the
-        archive has been extracted.
+        this walks into New Project and applies it once the archive has
+        been extracted.
         """
         try:
             bundle = read_bundle(bundle_path)
         except (BundleError, OSError) as e:
-            QMessageBox.critical(self, "Cannot read that bundle", str(e))
+            QMessageBox.critical(self, "Not a shared project", str(e))
             return
 
         from_archive = f" It was made from {bundle.archive_name}." if bundle.archive_name else ""
         reply = QMessageBox.question(
             self,
             "Extract the archive first",
-            f"This bundle has {bundle.layer_count} layer(s) across "
+            f"This shared project has {bundle.layer_count} layer(s) across "
             f"{bundle.edited_count} image(s) and {len(bundle.stickers)} sticker(s), "
             f"but no images.{from_archive}\n\n"
-            "It applies to a project of your own made from the same archive, "
-            "so that has to be extracted first. Set one up now and apply this "
-            "bundle when it finishes?",
+            "It applies on top of a project of your own made from the same archive, "
+            "so that has to be extracted first. Set one up now and apply the "
+            "shared project when it finishes?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
         )

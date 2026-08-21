@@ -72,20 +72,20 @@ Requires Python 3.11 or newer, and a copy of nightly alice.exe from [nunuhara/al
 - The project file is written atomically (temp file plus rename), so a crash mid-save cannot
   corrupt it.
 
-## Sharing your censor work
+## Sharing a project
 
-**File > Export Censor Work…** writes a zip holding your review statuses, every censor layer you
-have drawn, and the stickers those layers use. No images and no paths, so it stays small: a Rance
-03 project with 771 layers across 529 images comes to about 5 MB.
+**File > Share Project…** writes a zip holding your review statuses, every censor layer you have
+drawn, and the stickers those layers use. No images and no paths, so it stays small: a Rance 03
+project with 771 layers across 529 images comes to about 5 MB.
 
-**File > Import Censor Work…** applies one to the project you have open. Images are matched by the
-path they have inside the archive, so both sides need to come from the same archive. Anything that
+**File > Open Shared Project…** applies one on top of the project you have open. Images are
+matched by the path they have inside the archive, so both sides need the same archive. Anything that
 does not line up is reported and skipped rather than invented. Stickers are unpacked into your own
 library, and a name you already have is left alone rather than overwritten.
 
-A bundle holds censor work, not images, so it can only be applied to images you already have. If
-you have not extracted the archive yet, Import says so and offers to set the project up first,
-then applies the bundle once the extraction finishes.
+A shared project holds the review work, not the images, so it can only be applied to images you
+already have. If you have not extracted the archive yet, it says so and offers to set the project
+up first, then applies the shared work once the extraction finishes.
 
 A project file on its own is not shareable, which is what this exists to solve. Every path in it
 is absolute and points at one machine, and its overlay layers name stickers that live in that
@@ -243,7 +243,7 @@ alice_censor/
   stickers.py       The managed sticker library
   paths.py          Archive-internal path handling
   session.py        The open project, its manifest and its tools as one value
-  share.py          Export and import censor work as a shareable bundle
+  share.py          Packaging a project so someone else can apply it
   gui/              Main window, project dialog, background workers
   gallery/          Thumbnail grid, model, folder tree, disk thumbnail cache
   editor/           Region canvas, layer panel, batch apply, sticker picker

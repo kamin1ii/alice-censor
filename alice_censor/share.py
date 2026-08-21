@@ -1,4 +1,8 @@
-"""Packaging censor work so someone else can use it.
+"""Packaging a project so someone else can use it.
+
+Called a "shared project" in the interface. "Bundle" is the term used
+here for the zip itself, to keep it distinct from the ProjectState it
+is built from.
 
 A project file holds the part that took the time, meaning which images
 were reviewed, what they were marked as, and every censor region drawn on

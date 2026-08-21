@@ -74,7 +74,8 @@ $size = (Get-Item $exe).Length / 1MB
 $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
 # Published with the release so anyone can check the download arrived
 # intact. The exe is unsigned, so this is the only integrity check there
-# is, see the SmartScreen note in the README.
+# is. CI computes the same hash on a clean machine and attaches it to the
+# release, so the two are worth comparing when a build looks wrong.
 Set-Content -Path "$exe.sha256" -Value "$hash *AliceCensor.exe" -Encoding ascii
 Write-Host ""
 Write-Host ("==> Built {0}  ({1:N1} MB)" -f $exe, $size) -ForegroundColor Green

@@ -143,51 +143,6 @@ pip install -e .
 
 If installed as a package, the `alice-censor` command does the same thing.
 
-## Windows SmartScreen
-
-The first time you run the exe, Windows is likely to say:
-
-> Microsoft Defender SmartScreen prevented an unrecognised app from starting.
-
-Click **More info**, then **Run anyway**.
-
-That warning is about reputation, not about anything found in the file. SmartScreen trusts an
-executable once it has been signed by a known publisher, or once enough people have downloaded
-that exact file without trouble. This one is unsigned and freshly built, so it has neither.
-
-Two things make it worse here rather than better. Reputation for an unsigned program attaches to
-the exact file, so **every new release starts from zero again**, and PyInstaller programs get
-flagged more readily than most because the same packaging is used by things that are not
-friendly.
-
-If you would rather check the download yourself, every release ships an `AliceCensor.exe.sha256`
-file next to the exe:
-
-```
-Get-FileHash .\AliceCensor.exe -Algorithm SHA256
-```
-
-Compare that against the published value. The build script prints the same hash when it builds,
-and CI computes it on a clean machine.
-
-The only real cure is a code signing certificate, which costs a few hundred a year and has to be
-bought as a person or a company. Until then the warning is expected, and worth saying plainly to
-anyone you hand the file to.
-
-## Changing the icon
-
-```
-python make_icon.py "path\to\artwork.png"
-```
-
-Writes `alice_censor/assets/icon.ico` at every size Windows asks for (16 through 256) plus a
-512px `icon.png` master. A source that is not square is centred on a transparent canvas rather
-than squashed or cropped. Rebuild the exe afterwards to pick it up.
-
-The same file is the window icon, the taskbar icon and the exe's icon, so there is one place to
-change. Windows caches exe icons aggressively, so if Explorer still shows the old one, that is
-the shell rather than the build.
-
 ## Building a standalone exe
 
 ```
@@ -230,24 +185,6 @@ launch rather than as a subtle bug.
 It is a one-file build, so the first launch unpacks to a temp directory and takes a second or
 two. Swap `EXE(...)` for a `COLLECT(...)` build if you would rather have a folder that starts
 instantly.
-
-## Workflow
-
-1. **File > New Project**, and point it at your `.afa` or `.ald` archive, your `alice.exe`, a
-   working folder, and where to save the project file. Alice Censor extracts the archive and
-   builds the manifest. `.ald` support is experimental, and the app will tell you so.
-2. **Review** in the Gallery tab. Filter down, tag what needs censoring, and use Auto-Flag
-   Explicit Scenes as a first pass if the archive has descriptive filenames.
-3. **Edit** by double clicking a thumbnail. Drag on the image to add a region, pick its layer
-   type and settings, and use Batch Apply to Scene Group to propagate it across the rest of the
-   scene.
-4. **Repack**. For an `.afa`, every image with enabled layers is rendered into the output folder,
-   everything else is copied through unchanged, and `ar pack` runs against that folder. For an
-   `.ald`, the archive is rebuilt directly instead, copying every image you did not touch across
-   untouched. Either way the result is read back and verified.
-
-Everything is saved to a `.acproj.json` sidecar as you go, so closing the app mid review loses
-nothing.
 
 ## How it stores your progress
 

@@ -1,9 +1,8 @@
 """Packaging censor work so someone else can use it.
 
 A project file holds the part that took the time, meaning which images
-were reviewed, what they were marked as, and every censor region drawn
-on them.
-It does not hold the images, so it is small and worth passing around.
+were reviewed, what they were marked as, and every censor region drawn on
+them. It does not hold the images, so it is small and worth passing around.
 
 Two things stop a project file being shareable on its own.
 

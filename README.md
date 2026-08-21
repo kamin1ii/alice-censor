@@ -83,6 +83,10 @@ path they have inside the archive, so both sides need to come from the same arch
 does not line up is reported and skipped rather than invented. Stickers are unpacked into your own
 library, and a name you already have is left alone rather than overwritten.
 
+A bundle holds censor work, not images, so it can only be applied to images you already have. If
+you have not extracted the archive yet, Import says so and offers to set the project up first,
+then applies the bundle once the extraction finishes.
+
 A project file on its own is not shareable, which is what this exists to solve. Every path in it
 is absolute and points at one machine, and its overlay layers name stickers that live in that
 machine's library. On a real project that is most of the work, since 668 of those 771 layers are
@@ -243,7 +247,7 @@ alice_censor/
   gui/              Main window, project dialog, background workers
   gallery/          Thumbnail grid, model, folder tree, disk thumbnail cache
   editor/           Region canvas, layer panel, batch apply, sticker picker
-tests/              330 tests, no alice.exe or real archives required
+tests/              334 tests, no alice.exe or real archives required
 main.py             Entry point for the frozen build
 alice-censor.spec   PyInstaller build definition
 build.ps1           Test, build, verify the exe launches

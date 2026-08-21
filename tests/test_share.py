@@ -208,3 +208,88 @@ def test_something_that_is_not_a_bundle_is_refused(tmp_path):
         zf.writestr("readme.txt", "hello")
     with pytest.raises(BundleError, match="not an Alice Censor bundle"):
         read_bundle(empty)
+
+
+# ===== arriving with a bundle and nothing extracted
+#
+# The common way to receive one. A bundle carries censor work but no
+# images, so it can only be applied to images you already have.
+
+
+def _bundle_at(tmp_path):
+    from alice_censor.share import export_bundle
+
+    export_bundle(_project(tmp_path), tmp_path / "b.zip")
+    return str(tmp_path / "b.zip")
+
+
+def test_import_is_reachable_with_no_project_open(qapp, tmp_path):
+    """Being handed a bundle is exactly when nothing is open yet, so a
+    greyed out menu item would explain nothing."""
+    from alice_censor.gui.main_window import MainWindow
+
+    window = MainWindow()
+    assert window.session is None
+    assert window._import_action.isEnabled()
+
+
+def test_a_bundle_chosen_with_nothing_open_offers_to_extract_first(qapp, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from alice_censor.gui.main_window import MainWindow
+
+    path = _bundle_at(tmp_path)
+    asked, launched = [], []
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (path, "")))
+    monkeypatch.setattr(
+        QMessageBox, "question", staticmethod(lambda *a, **k: asked.append(a) or QMessageBox.Yes)
+    )
+    monkeypatch.setattr(MainWindow, "new_project", lambda self: launched.append(self._pending_bundle))
+
+    window = MainWindow()
+    window.import_bundle()
+
+    assert asked, "it must explain rather than do nothing"
+    body = asked[0][2]
+    assert "no images" in body, "say why a project is needed"
+    assert "Game.afa" in body, "name the archive it came from"
+    assert launched == [path], "and remember the bundle across New Project"
+
+
+def test_declining_leaves_nothing_pending(qapp, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from alice_censor.gui.main_window import MainWindow
+
+    path = _bundle_at(tmp_path)
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (path, "")))
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.No))
+    launched = []
+    monkeypatch.setattr(MainWindow, "new_project", lambda self: launched.append(1))
+
+    window = MainWindow()
+    window.import_bundle()
+
+    assert launched == []
+    assert window._pending_bundle is None
+
+
+def test_a_bad_bundle_is_refused_before_offering_to_extract(qapp, tmp_path, monkeypatch):
+    """No point extracting a whole archive for a file that is not a bundle."""
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from alice_censor.gui.main_window import MainWindow
+
+    junk = tmp_path / "holiday.zip"
+    junk.write_bytes(b"not a zip")
+    told, launched = [], []
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(junk), "")))
+    monkeypatch.setattr(QMessageBox, "critical", staticmethod(lambda *a, **k: told.append(a)))
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
+    monkeypatch.setattr(MainWindow, "new_project", lambda self: launched.append(1))
+
+    window = MainWindow()
+    window.import_bundle()
+
+    assert told, "say it is not a bundle"
+    assert launched == [], "and do not start extracting an archive for it"

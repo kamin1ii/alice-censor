@@ -50,6 +50,9 @@ class MainWindow(QMainWindow):
         # experimental, lands in the log once rather than on every summary
         # refresh.
         self._warned_repack_notice = False
+        # Set when Import Censor Work was chosen with nothing open, so
+        # the bundle can be applied once New Project finishes extracting.
+        self._pending_bundle: str | None = None
         # Tracks whether the open project has changes not yet persisted to
         # its project_file. _autosave sets this before writing and clears
         # it only once the write actually succeeds, so a failed save from a
@@ -104,8 +107,10 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         self._export_action = file_menu.addAction("&Export Censor Work…", self.export_bundle)
         self._export_action.setEnabled(False)
+        # Left enabled with no project open. Being handed a bundle is
+        # exactly the case where you have not extracted anything yet, and
+        # a greyed out menu item explains none of that.
         self._import_action = file_menu.addAction("&Import Censor Work…", self.import_bundle)
-        self._import_action.setEnabled(False)
         file_menu.addSeparator()
         file_menu.addAction("E&xit", self.close)
 
@@ -249,6 +254,10 @@ class MainWindow(QMainWindow):
         self._refresh_summary()
         self._refresh_gallery(result)
 
+        pending, self._pending_bundle = self._pending_bundle, None
+        if pending:
+            self._apply_bundle_file(pending)
+
     def open_project(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Project", filter="Alice Censor projects (*.acproj.json)"
@@ -340,14 +349,25 @@ class MainWindow(QMainWindow):
         sides have to come from the same archive for anything to line up.
         A mismatch shows as unmatched entries rather than as an error.
         """
-        if self.session is None:
-            return
         path, _ = QFileDialog.getOpenFileName(
             self, "Import Censor Work", "", filter="Alice Censor bundles (*.zip)"
         )
         if not path:
             return
 
+        if self.session is None:
+            self._offer_project_for_bundle(path)
+            return
+        self._apply_bundle_file(path)
+
+    def _apply_bundle_file(self, path: str) -> None:
+        """Confirm and apply a bundle to the open project.
+
+        Split out because a bundle can arrive two ways, chosen against an
+        open project or chosen with nothing open and applied once New
+        Project has finished extracting.
+        """
+        assert self.session is not None
         project = self.session.project
         try:
             bundle = read_bundle(path)
@@ -406,6 +426,39 @@ class MainWindow(QMainWindow):
                 self.gallery_widget.model.notify_layers_changed(changed)
         QMessageBox.information(self, "Imported", message)
 
+    def _offer_project_for_bundle(self, bundle_path: str) -> None:
+        """Explain what a bundle needs, and offer to set it up now.
+
+        A bundle carries censor work, not images, so it can only be
+        applied to images you already have. Being sent one is the common
+        way to arrive here with nothing open, so rather than refusing,
+        this walks into New Project and applies the bundle once the
+        archive has been extracted.
+        """
+        try:
+            bundle = read_bundle(bundle_path)
+        except (BundleError, OSError) as e:
+            QMessageBox.critical(self, "Cannot read that bundle", str(e))
+            return
+
+        from_archive = f" It was made from {bundle.archive_name}." if bundle.archive_name else ""
+        reply = QMessageBox.question(
+            self,
+            "Extract the archive first",
+            f"This bundle has {bundle.layer_count} layer(s) across "
+            f"{bundle.edited_count} image(s) and {len(bundle.stickers)} sticker(s), "
+            f"but no images.{from_archive}\n\n"
+            "It applies to a project of your own made from the same archive, "
+            "so that has to be extracted first. Set one up now and apply this "
+            "bundle when it finishes?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        self._pending_bundle = bundle_path
+        self.new_project()
+
     def _set_project_actions_enabled(self, enabled: bool) -> None:
         """Enable or disable everything that only makes sense with a
         project open. Kept apart from _refresh_summary so that redrawing
@@ -417,7 +470,6 @@ class MainWindow(QMainWindow):
         self._save_action.setEnabled(enabled)
         self._save_as_action.setEnabled(enabled)
         self._export_action.setEnabled(enabled)
-        self._import_action.setEnabled(enabled)
 
     def _tools_usable(self, session: OpenProject) -> bool:
         """Check the alice.exe a saved project points at before using it.

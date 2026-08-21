@@ -226,7 +226,7 @@ alice_censor/
   gui/              Main window, project dialog, background workers
   gallery/          Thumbnail grid, model, folder tree, disk thumbnail cache
   editor/           Region canvas, layer panel, batch apply, sticker picker
-tests/              313 tests, no alice.exe or real archives required
+tests/              314 tests, no alice.exe or real archives required
 main.py             Entry point for the frozen build
 alice-censor.spec   PyInstaller build definition
 build.ps1           Test, build, verify the exe launches

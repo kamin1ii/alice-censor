@@ -233,3 +233,23 @@ def test_seeding_is_skipped_when_the_original_format_differs_from_the_packed_one
 
     assert result.preserved_paths == []
     assert not (tmp_path / "export" / "alice-tools-cache" / "a.qnt").exists()
+
+
+def test_the_packed_order_is_archive_order_not_the_gallery_order(tmp_path):
+    """The gallery sorts by name so scenes read in sequence. What gets
+    packed must stay in the order the archive had, because that is what
+    the game indexes into. These two orders must never be confused.
+    """
+    from alice_censor.paths import natural_sort_key
+
+    archive_order = ["h10.png", "h02.png", "h01.png", "h04.png"]
+    manifest = _make_manifest(tmp_path, archive_order)
+    project = ProjectState(output_dir=str(tmp_path / "export"))
+
+    result = render_export(project, manifest)
+
+    packed = parse_manifest(result.manifest_path).paths()
+    assert packed == archive_order, "packing must not reorder anything"
+    assert packed != sorted(archive_order, key=natural_sort_key), (
+        "and the sorted order must be genuinely different, or this proves nothing"
+    )

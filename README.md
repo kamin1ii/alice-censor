@@ -224,7 +224,7 @@ alice_censor/
   gui/              Main window, project dialog, background workers
   gallery/          Thumbnail grid, model, folder tree, disk thumbnail cache
   editor/           Region canvas, layer panel, batch apply, sticker picker
-tests/              298 tests, no alice.exe or real archives required
+tests/              304 tests, no alice.exe or real archives required
 main.py             Entry point for the frozen build
 alice-censor.spec   PyInstaller build definition
 build.ps1           Test, build, verify the exe launches
@@ -247,7 +247,13 @@ The suite runs offscreen (`QT_QPA_PLATFORM=offscreen`) and needs neither a displ
 
 ## Notes and caveats
 
-- alice-tools is a separate project and is not bundled here. Please use the latest nightly version not 0.13.0 or you will experience missing events/cards/items/areas/etc.
+- alice-tools is a separate project and is not bundled here. Please use the latest nightly version
+  not 0.13.0 or you will experience missing events/cards/items/areas/etc. Alice Censor checks this
+  for you and refuses to run rather than failing halfway, since 0.13.0 has no `--manifest` and
+  responds to one by printing its usage text, extracting nothing and reporting success.
+- The version number cannot tell you which build you have. The nightlies still report
+  `alice-tools version 0.13.0`, the same string the 2023 release reports, so the check asks the
+  binary which flags its `ar extract` supports instead.
 - **Editing and rebuilding `.ald` archives is experimental.** That path is written by Alice
   Censor rather than by alice-tools, which has no `.ald` writer at all (`ar_pack` rejects any
   output that is not `.afa`, and `write_afa.c` is its only archive writer). It has had far less

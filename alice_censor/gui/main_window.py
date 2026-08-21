@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..alice_tools import AliceTools
+from ..alice_tools import AliceTools, AliceToolsOutdated
 from ..editor.editor_dialog import RegionEditorDialog
 from ..export import render_export
 from ..gallery.gallery_model import GalleryModel
@@ -180,8 +180,12 @@ class MainWindow(QMainWindow):
         tools = AliceTools(alice_exe)
         try:
             tools.check_available()
+            tools.check_supported()
         except FileNotFoundError as e:
             QMessageBox.critical(self, "alice.exe not found", str(e))
+            return
+        except AliceToolsOutdated as e:
+            QMessageBox.critical(self, "alice.exe is too old", str(e))
             return
 
         manifest_path = Path(output_dir) / "manifest.txt"
@@ -299,6 +303,25 @@ class MainWindow(QMainWindow):
         self.repack_button.setEnabled(enabled and self._repack_blocked_reason() is None)
         self._save_action.setEnabled(enabled)
         self._save_as_action.setEnabled(enabled)
+
+    def _tools_usable(self, session: OpenProject) -> bool:
+        """Check the alice.exe a saved project points at before using it.
+
+        A project can be opened with any alice.exe, including one swapped
+        out since it was created, and reviewing images works fine either
+        way. Only the operations that actually shell out need this, so the
+        check lives here rather than blocking the project from opening.
+        """
+        try:
+            session.tools.check_available()
+            session.tools.check_supported()
+        except FileNotFoundError as e:
+            QMessageBox.critical(self, "alice.exe not found", str(e))
+            return False
+        except AliceToolsOutdated as e:
+            QMessageBox.critical(self, "alice.exe is too old", str(e))
+            return False
+        return True
 
     def _repack_blocked_reason(self) -> str | None:
         """Why this project cannot be repacked, or None if it can.
@@ -557,6 +580,8 @@ class MainWindow(QMainWindow):
         if self.session is None:
             return
         session = self.session
+        if not self._tools_usable(session):
+            return
         self.log("Re-extracting...")
 
         def job(on_output):
@@ -595,6 +620,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Repack not possible", blocked)
             return
         session = self.session
+        if not self._tools_usable(session):
+            return
         self.repack_button.setEnabled(False)
 
         if session.manifest.archive_format != ManifestFormat.AFA:

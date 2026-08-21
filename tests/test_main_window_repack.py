@@ -22,6 +22,14 @@ class FakeAliceTools:
         self.clear_cache_flags: list[bool] = []
         self._packed_manifest = None
 
+    def check_available(self):
+        pass
+
+    def check_supported(self):
+        # A real one probes `ar extract --help` for the manifest flags. The
+        # fake is by definition a build that has them.
+        pass
+
     def repack(self, manifest, *, backup_original=True, clear_cache=True,
                extra_args=None, on_output=None):
         # Recorded so a test can assert the export path does not wipe the

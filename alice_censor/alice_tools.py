@@ -37,6 +37,19 @@ from .manifest import Manifest, format_manifest_field, split_header_tokens
 OutputCallback = Callable[[str], None]
 
 
+# Flags extract() passes that alice-tools gained after the 0.13.0 release.
+# A build without them predates the manifest workflow this app is built on.
+REQUIRED_EXTRACT_FLAGS = ("--manifest", "--cache", "--images-only")
+
+
+class AliceToolsOutdated(RuntimeError):
+    """The alice.exe found is too old to do what this app needs.
+
+    Kept apart from AliceToolsError because it is not a failed command. It
+    is a build that will accept the command and quietly do nothing useful.
+    """
+
+
 class AliceToolsError(RuntimeError):
     def __init__(self, message: str, *, args: Sequence[str], returncode: int | None,
                  stdout: str = ""):
@@ -157,10 +170,51 @@ class AliceTools:
 
     def __init__(self, exe_path: str | Path):
         self.exe_path = Path(exe_path)
+        # Cached because check_supported is called before every operation
+        # and the answer cannot change while the app is running.
+        self._supported: bool | None = None
 
     def check_available(self) -> None:
         if not self.exe_path.exists():
             raise FileNotFoundError(f"alice-tools executable not found: {self.exe_path}")
+
+    def missing_extract_flags(self) -> list[str]:
+        """Which flags this build's `ar extract` does not advertise.
+
+        Asks the binary what it can do rather than what it is called.
+        `alice --version` is no help, because the nightlies still report
+        0.13.0, the same string the 2023 release reports, so the version
+        cannot distinguish a build from three years ago from today's.
+
+        Reads `ar extract --help`, which is fast and touches no archive.
+        """
+        result = self._run(["ar", "extract", "--help"], check=False)
+        return [flag for flag in REQUIRED_EXTRACT_FLAGS if flag not in result.stdout]
+
+    def check_supported(self) -> None:
+        """Raise AliceToolsOutdated unless this build can do the job.
+
+        Worth checking up front because the failure is otherwise silent
+        and misleading. Handed `--manifest`, alice-tools 0.13.0 prints its
+        usage text, extracts nothing, writes no manifest, and exits 0, so
+        nothing downstream sees an error until the missing manifest fails
+        to parse and the user is told their manifest is broken.
+        """
+        if self._supported:
+            return
+        self.check_available()
+        missing = self.missing_extract_flags()
+        if missing:
+            raise AliceToolsOutdated(
+                f"This alice.exe is too old for Alice Censor.\n\n{self.exe_path}\n\n"
+                f"Its 'ar extract' has no {', '.join(missing)}, so it cannot write the "
+                f"manifest everything here is built on. Given one anyway it prints its "
+                f"usage text, extracts nothing and reports success.\n\n"
+                f"Get a recent nightly from github.com/nunuhara/alice-tools and point "
+                f"the project at that instead. Checking the version will not tell you "
+                f"which you have, since the nightlies still report 0.13.0 themselves."
+            )
+        self._supported = True
 
     # ===== low-level
 

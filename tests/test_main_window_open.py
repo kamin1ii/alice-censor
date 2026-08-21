@@ -237,6 +237,11 @@ def test_rebuilding_an_ald_asks_before_overwriting_the_archive(qapp, tmp_path, m
     from alice_censor.manifest import ManifestFormat
 
     _capture_load_warning(monkeypatch)
+    # The session points at a dummy alice.exe. Repack now verifies the
+    # binary can do the job before it asks anything, and this test is
+    # about the confirmation rather than about that check.
+    monkeypatch.setattr(AliceTools, "check_available", lambda self: None)
+    monkeypatch.setattr(AliceTools, "check_supported", lambda self: None)
     (tmp_path / "gameA.ald").write_bytes(b"")
     window = MainWindow()
     window.session = _session_for(tmp_path, "gameA.ald", ManifestFormat.ALD)
@@ -254,3 +259,33 @@ def test_rebuilding_an_ald_asks_before_overwriting_the_archive(qapp, tmp_path, m
     assert "EXPERIMENTAL" in asked[0][2], "the confirmation must say what it is agreeing to"
     assert not started, "declining must not rebuild anything"
     assert window.repack_button.isEnabled(), "declining must leave Repack usable"
+
+
+def test_repack_refuses_an_alice_exe_that_is_too_old(qapp, tmp_path, monkeypatch):
+    """The failure is silent otherwise. A pre-manifest build accepts the
+    command, does nothing and exits 0."""
+    from alice_censor.alice_tools import AliceToolsOutdated
+    from alice_censor.manifest import ManifestFormat
+
+    _capture_load_warning(monkeypatch)
+    (tmp_path / "gameA.ald").write_bytes(b"")
+    window = MainWindow()
+    window.session = _session_for(tmp_path, "gameA.ald", ManifestFormat.ALD)
+    window._refresh_summary()
+
+    monkeypatch.setattr(AliceTools, "check_available", lambda self: None)
+    monkeypatch.setattr(
+        AliceTools, "check_supported",
+        lambda self: (_ for _ in ()).throw(AliceToolsOutdated("no --manifest, get a nightly")),
+    )
+    told = []
+    monkeypatch.setattr(QMessageBox, "critical", staticmethod(lambda *a, **k: told.append(a)))
+    started = []
+    monkeypatch.setattr(MainWindow, "_run_worker", lambda self, *a, **k: started.append(a))
+
+    window.run_repack()
+
+    assert told, "the user must be told the binary is the problem"
+    assert "too old" in told[0][1].lower()
+    assert not started, "nothing may run with a build that cannot do the job"
+    assert window.repack_button.isEnabled(), "Repack stays usable after pointing at a newer exe"

@@ -1,3 +1,5 @@
+import io
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -5,6 +7,7 @@ import pytest
 from alice_censor.alice_tools import (
     AliceTools,
     AliceToolsError,
+    AliceToolsOutdated,
     clear_cache_dir,
     ensure_archive_backup,
 )
@@ -195,3 +198,97 @@ def test_clear_cache_dir_removes_contents_not_dir_itself(tmp_path):
 
 def test_clear_cache_dir_missing_dir_is_noop(tmp_path):
     assert clear_cache_dir(tmp_path / "nope") == 0
+
+
+# ===== detecting an alice.exe that is too old
+#
+# alice-tools 0.13.0 has no --manifest, so it prints its usage text,
+# extracts nothing and exits 0. Nothing downstream sees an error until the
+# manifest that was never written fails to parse. The version string is no
+# help either, since the nightlies still report 0.13.0 themselves.
+
+
+class FakeHelpPopen:
+    """Stands in for `ar extract --help`, answering with whatever flag list
+    the test wants."""
+
+    help_text = ""
+
+    def __init__(self, args, **kwargs):
+        FakeHelpPopen.args = args
+        self.stdout = io.StringIO(FakeHelpPopen.help_text)
+        self.returncode = 0
+
+    def wait(self, timeout=None):
+        return 0
+
+
+MODERN_HELP = """Usage: alice ar extract [options...] <input-file>
+    -o,--output <arg>       Specify output file/directory
+    --images-only           Only extract images
+    --raw                   Don't convert image files
+    --manifest <arg>        Write ALICEPACK manifest
+    --cache                 Create cache for manifest
+"""
+
+OLD_0_13_HELP = """Usage: alice ar extract [options...] <input-file>
+    -o,--output <arg>       Specify output file/directory
+    --images-only           Only extract images
+    --raw                   Don't convert image files
+"""
+
+
+def _tools_with_help(monkeypatch, tmp_path, help_text):
+    exe = tmp_path / "alice.exe"
+    exe.write_bytes(b"not really an executable")
+    FakeHelpPopen.help_text = help_text
+    monkeypatch.setattr(subprocess, "Popen", FakeHelpPopen)
+    return AliceTools(exe)
+
+
+def test_a_current_build_is_accepted(monkeypatch, tmp_path):
+    tools = _tools_with_help(monkeypatch, tmp_path, MODERN_HELP)
+    assert tools.missing_extract_flags() == []
+    tools.check_supported()  # must not raise
+
+
+def test_the_check_asks_the_binary_what_it_supports(monkeypatch, tmp_path):
+    """Not what it is called. Both the 2023 release and today's nightly
+    report version 0.13.0."""
+    tools = _tools_with_help(monkeypatch, tmp_path, MODERN_HELP)
+    tools.check_supported()
+    assert FakeHelpPopen.args[1:] == ["ar", "extract", "--help"]
+
+
+def test_a_pre_manifest_build_is_rejected(monkeypatch, tmp_path):
+    tools = _tools_with_help(monkeypatch, tmp_path, OLD_0_13_HELP)
+    assert tools.missing_extract_flags() == ["--manifest", "--cache"]
+    with pytest.raises(AliceToolsOutdated) as excinfo:
+        tools.check_supported()
+    message = str(excinfo.value)
+    assert "--manifest" in message, "say which capability is missing"
+    assert str(tools.exe_path) in message, "say which binary is the problem"
+    assert "nightly" in message.lower(), "say how to fix it"
+
+
+def test_the_answer_is_cached(monkeypatch, tmp_path):
+    """Called before every operation, so it must not spawn a process each
+    time. The answer cannot change while the app runs."""
+    tools = _tools_with_help(monkeypatch, tmp_path, MODERN_HELP)
+    tools.check_supported()
+    calls = []
+    monkeypatch.setattr(tools, "missing_extract_flags", lambda: calls.append(1) or [])
+    tools.check_supported()
+    tools.check_supported()
+    assert calls == []
+
+
+def test_a_rejected_build_is_rechecked_rather_than_cached(monkeypatch, tmp_path):
+    """Only success is cached, so pointing at a fixed binary works without
+    restarting."""
+    tools = _tools_with_help(monkeypatch, tmp_path, OLD_0_13_HELP)
+    for _ in range(2):
+        with pytest.raises(AliceToolsOutdated):
+            tools.check_supported()
+    FakeHelpPopen.help_text = MODERN_HELP
+    tools.check_supported()  # must not raise

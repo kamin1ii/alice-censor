@@ -53,7 +53,7 @@ Requires Python 3.11 or newer, and a copy of nightly alice.exe from [nunuhara/al
   never compound on each other, and rects are stored as fractions of image size so they survive a
   re-export at a different resolution.
 - Configure a layer's settings once with nothing selected, then stamp out several regions with it.
-- **Apply to Scene Group** copies the current layers onto every checked variant image in the same
+- **Batch Apply to Scene Group** copies the current layers onto every checked variant image in the same
   scene, each with independent copies so they stay individually adjustable afterwards.
 - A managed sticker library, with a thumbnail picker, instead of browsing to a file every time.
 
@@ -239,7 +239,8 @@ instantly.
 2. **Review** in the Gallery tab. Filter down, tag what needs censoring, and use Auto-Flag
    Explicit Scenes as a first pass if the archive has descriptive filenames.
 3. **Edit** by double clicking a thumbnail. Drag on the image to add a region, pick its layer
-   type and settings, and use Apply to Scene Group to propagate it across the rest of the scene.
+   type and settings, and use Batch Apply to Scene Group to propagate it across the rest of the
+   scene.
 4. **Repack**. For an `.afa`, every image with enabled layers is rendered into the output folder,
    everything else is copied through unchanged, and `ar pack` runs against that folder. For an
    `.ald`, the archive is rebuilt directly instead, copying every image you did not touch across

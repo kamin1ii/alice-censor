@@ -26,7 +26,7 @@ class BatchApplyDialog(QDialog):
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
-        self.setWindowTitle("Apply to Scene Group")
+        self.setWindowTitle("Batch Apply to Scene Group")
         self.setMinimumWidth(440)
 
         plural = "" if layer_count == 1 else "s"

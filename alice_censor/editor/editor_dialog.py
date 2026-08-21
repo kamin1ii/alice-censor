@@ -66,7 +66,7 @@ class RegionEditorDialog(QDialog):
         self.image_record = image_record
         self._layers: list[CensorLayer] = copy.deepcopy(image_record.layers)
         self.sticker_resolver = sticker_resolver
-        # For "Apply to Scene Group". project and current_path let us look
+        # For "Batch Apply to Scene Group". project and current_path let us look
         # up and write other images' ImageRecords, and group_members is this
         # image's scene-group siblings, excluding itself. Any of these being
         # None just disables that button, so tests that only care about
@@ -106,7 +106,7 @@ class RegionEditorDialog(QDialog):
         self.render_error_label.setStyleSheet("color: #e53935;")
         self.render_error_label.setWordWrap(True)
         self.render_error_label.hide()
-        self.batch_apply_button = QPushButton("Apply to Scene Group…")
+        self.batch_apply_button = QPushButton("Batch Apply to Scene Group…")
         self.batch_apply_button.setEnabled(bool(self.group_members) and self.project is not None)
         if not self.group_members:
             self.batch_apply_button.setToolTip("No other images share this image's scene group.")

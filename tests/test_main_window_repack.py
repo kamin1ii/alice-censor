@@ -2,6 +2,7 @@ from pathlib import Path
 
 from PIL import Image
 from PySide6.QtCore import QCoreApplication
+import pytest
 from PySide6.QtWidgets import QMessageBox
 
 from alice_censor.gui.main_window import MainWindow
@@ -10,6 +11,14 @@ from alice_censor.project import CensorLayer, ImageRecord, LayerType, ProjectSta
 from alice_censor.scanning import scan_and_sync
 from alice_censor.session import OpenProject
 
+
+@pytest.fixture(autouse=True)
+def through_alice_exe(isolated_settings):
+    """These cases are about the alice.exe path, which is no longer the
+    default, so the switch goes off for all of them."""
+    from alice_censor.gui import settings as app_settings
+
+    app_settings.set_native_formats_enabled(False)
 
 class FakeAliceTools:
     """Stands in for AliceTools.repack/list_archive so this test doesn't

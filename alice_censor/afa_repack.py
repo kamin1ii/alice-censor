@@ -34,8 +34,17 @@ from pathlib import Path
 from PIL import Image, UnidentifiedImageError
 
 from .alice_tools import ensure_archive_backup
+from . import formats
 from .formats import qnt
-from .formats.afa import AfaEntry, AfaError, AfaReader, copy_of, replacement_for, write_afa
+from .formats import dcf
+from .formats.afa import (
+    AfaEntry,
+    AfaError,
+    AfaReader,
+    copy_of,
+    replacement_for,
+    write_afa,
+)
 from .manifest import Manifest
 from .paths import resolve_fs_path
 from .project import ProjectState
@@ -247,9 +256,13 @@ def _load_image(
     package reads, which is the authoritative source and needs nothing else
     on disk. For anything else the extracted PNG stands in, which is the
     same picture the gallery showed and the editor drew on.
+
+    A difference image is the one that still needs the fallback. Composing
+    one means finding the image it differs from, and that lookup belongs to
+    whoever holds the archive rather than here.
     """
-    if qnt.is_qnt(data):
-        return qnt.decode(data)
+    if formats.can_decode(data) and not dcf.is_dcf(data):
+        return formats.decode_image(data)
 
     if extract_dir and path:
         source = resolve_fs_path(extract_dir, path)

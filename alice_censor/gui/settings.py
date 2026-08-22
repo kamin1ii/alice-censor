@@ -13,9 +13,12 @@ from PySide6.QtCore import QSettings
 ORGANISATION = "Alice Censor"
 APPLICATION = "Alice Censor"
 
-# Off by default. alice-tools is the path that has been used in anger, and
-# the built in one takes over the step that overwrites a game archive.
+# On by default. Alice Censor reads and writes every format these archives
+# use, so a project needs no alice.exe at all. Turning this off puts extract
+# and repack back through alice.exe, which is still worth having for an
+# archive holding something this build has not met.
 NATIVE_FORMATS_KEY = "experimental/native_formats"
+DEFAULT_NATIVE_FORMATS = True
 
 
 def _store() -> QSettings:
@@ -23,7 +26,7 @@ def _store() -> QSettings:
 
 
 def native_formats_enabled() -> bool:
-    return bool(_store().value(NATIVE_FORMATS_KEY, False, type=bool))
+    return bool(_store().value(NATIVE_FORMATS_KEY, DEFAULT_NATIVE_FORMATS, type=bool))
 
 
 def set_native_formats_enabled(enabled: bool) -> None:

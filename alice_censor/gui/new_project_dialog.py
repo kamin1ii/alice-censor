@@ -45,15 +45,22 @@ class _PathRow(QWidget):
 
 
 class NewProjectDialog(QDialog):
-    """Collects the handful of paths needed to start a project. The source
-    archive, alice.exe, where to extract to, and where to save the project
-    sidecar file. Everything else (manifest path, cache dir) is derived
-    from those."""
+    """Collects the handful of paths needed to start a project.
 
-    def __init__(self, parent=None):
+    The source archive, where to extract to, and where to save the project
+    sidecar file. Everything else, the manifest path and the cache folder,
+    is derived from those.
+
+    alice.exe is asked for only when this build is set to go through it.
+    With the built in format support on, which is the default, nothing here
+    shells out and the field would be a requirement with nothing behind it.
+    """
+
+    def __init__(self, parent=None, *, needs_alice_exe: bool = False):
         super().__init__(parent)
         self.setWindowTitle("New Project")
         self.setMinimumWidth(480)
+        self.needs_alice_exe = needs_alice_exe
 
         self.archive_row = _PathRow("Select archive", "AliceSoft archives (*.afa *.ald)")
         self.alice_exe_row = _PathRow("Select alice.exe", "Executables (*.exe);;All files (*)")
@@ -64,7 +71,10 @@ class NewProjectDialog(QDialog):
 
         form = QFormLayout()
         form.addRow("Archive (.afa / .ald):", self.archive_row)
-        form.addRow("alice.exe:", self.alice_exe_row)
+        if needs_alice_exe:
+            form.addRow("alice.exe:", self.alice_exe_row)
+        else:
+            self.alice_exe_row.setVisible(False)
         form.addRow("Working folder:", self.output_row)
         form.addRow("Project file:", self.project_file_row)
 
@@ -104,7 +114,7 @@ class NewProjectDialog(QDialog):
     def _on_accept(self) -> None:
         if not self.archive_row.text():
             return
-        if not self.alice_exe_row.text():
+        if self.needs_alice_exe and not self.alice_exe_row.text():
             return
         if not self.output_row.text():
             return

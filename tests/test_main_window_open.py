@@ -6,6 +6,7 @@ must not happen is the window ending up holding one project's state next
 to another project's file list.
 """
 
+import pytest
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from alice_censor.alice_tools import AliceTools
@@ -14,6 +15,14 @@ from alice_censor.manifest import Manifest, ManifestFormat, ManifestOptions
 from alice_censor.project import ProjectState
 from alice_censor.session import OpenProject
 
+
+@pytest.fixture(autouse=True)
+def through_alice_exe(isolated_settings):
+    """These cases are about the alice.exe path, which is no longer the
+    default, so the switch goes off for all of them."""
+    from alice_censor.gui import settings as app_settings
+
+    app_settings.set_native_formats_enabled(False)
 
 def _already_open(tmp_path):
     """A window with a healthy project open, standing in for whatever the

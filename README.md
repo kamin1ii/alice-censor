@@ -9,7 +9,13 @@ alice-tools' conversion cache, and running `ar pack`. Alice Censor wraps that wh
 window: extract, review in a thumbnail gallery, draw censor regions with live preview, repack,
 and verify the result.
 
-Requires Python 3.11 or newer, and a copy of nightly alice.exe from [nunuhara/alice-tools](https://github.com/nunuhara/alice-tools). Please use the latest nightly version there NOT 0.13.0
+Requires Python 3.11 or newer. **alice.exe is not needed.** Alice Censor reads and writes the
+archive and image formats itself, so a new project asks for your archive and a folder and nothing
+else.
+
+You can still put it through [alice-tools](https://github.com/nunuhara/alice-tools) if you would
+rather, by turning off **Advanced > Use built in format support**, in which case you need a recent
+nightly alice.exe and not 0.13.0.
 
 ## Screenshots
 
@@ -239,10 +245,16 @@ The suite runs offscreen (`QT_QPA_PLATFORM=offscreen`) and needs neither a displ
 
 ## Notes and caveats
 
-- alice-tools is a separate project and is not bundled here. Please use the latest nightly version
-  not 0.13.0 or you will experience missing events/cards/items/areas/etc. Alice Censor checks this
-  for you and refuses to run rather than failing halfway, since 0.13.0 has no `--manifest` and
+- alice-tools is a separate project and is not bundled here. It is optional, and only used if you
+  turn off **Advanced > Use built in format support**. If you do, use the latest nightly and not
+  0.13.0 or you will experience missing events/cards/items/areas/etc. Alice Censor checks this for
+  you and refuses to run rather than failing halfway, since 0.13.0 has no `--manifest` and
   responds to one by printing its usage text, extracting nothing and reporting success.
+- The built in support covers QNT, AJP, DCF and PMS images inside .afa and .ald archives, which is
+  everything Rance 02 and Rance 03 hold. An archive carrying something else needs alice.exe. The
+  formats were checked entry by entry against it: every QNT and DCF in Rance 03 decodes pixel for
+  pixel the same, as does the transparency of every AJP in Rance 02, and a rebuilt archive with
+  nothing edited comes out byte for byte identical to the original.
 - The version number cannot tell you which build you have. The nightlies still report
   `alice-tools version 0.13.0`, the same string the 2023 release reports, so the check asks the
   binary which flags its `ar extract` supports instead.

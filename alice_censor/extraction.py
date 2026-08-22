@@ -28,7 +28,8 @@ from pathlib import Path
 from PIL import Image
 
 from .ald import read_ald
-from .formats import ajp, dcf, qnt
+from . import formats
+from .formats import dcf, qnt
 from .formats.afa import AfaError, AfaReader
 from .manifest import Manifest, ManifestEntry, ManifestFormat, ManifestOptions, write_manifest
 from .paths import resolve_fs_path
@@ -245,24 +246,13 @@ def _write_one(item: _Item, output_dir: Path) -> None:
 
 
 def _decode(item: _Item) -> Image.Image:
-    if qnt.is_qnt(item.data):
-        return qnt.decode(item.data)
-    if ajp.is_ajp(item.data):
-        return ajp.decode(item.data)
-    if dcf.is_dcf(item.data):
-        base = item.base
-        return dcf.decode(item.data, lambda name: _decode_base(base))
-    raise ExtractionError(f"{item.name} is not an image this build can read")
-
-
-def _decode_base(data: bytes | None) -> Image.Image | None:
-    if data is None:
-        return None
-    if qnt.is_qnt(data):
-        return qnt.decode(data)
-    if ajp.is_ajp(data):
-        return ajp.decode(data)
-    return None
+    if not formats.can_decode(item.data):
+        raise ExtractionError(f"{item.name} is not an image this build can read")
+    base = item.base
+    return formats.decode_image(
+        item.data,
+        lambda name: formats.decode_image(base) if base is not None else None,
+    )
 
 
 def _write_manifest(archive_path: Path, items, result: ExtractResult, *, cache_dir) -> None:

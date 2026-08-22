@@ -19,6 +19,7 @@ from ..afa_repack import repack_afa_in_place, verify_afa
 from ..alice_tools import AliceTools, AliceToolsOutdated
 from ..editor.editor_dialog import RegionEditorDialog
 from ..export import render_export
+from ..extraction import extract_archive
 from ..gallery.gallery_model import GalleryModel
 from ..gallery.gallery_widget import GalleryWidget
 from ..grouping import find_explicit_by_naming
@@ -142,13 +143,27 @@ class MainWindow(QMainWindow):
         if self.session is not None:
             self._refresh_summary()
 
-    def _use_native_repack(self) -> bool:
-        """Whether this repack should go through the built in writer.
+    def _use_native_formats(self) -> bool:
+        """Whether this build should read and write archives itself.
 
-        Only .afa reaches here. The .ald path has always been built in,
-        because alice-tools cannot write that format at all.
+        On by default. Turned off, extract and repack go back through
+        alice.exe. The .ald repack ignores it either way, since alice-tools
+        cannot write that format at all.
         """
         return bool(self._native_action.isChecked())
+
+    def _alice_exe_usable(self, tools: AliceTools) -> bool:
+        """Report a missing or too old alice.exe, once, in one way."""
+        try:
+            tools.check_available()
+            tools.check_supported()
+        except FileNotFoundError as e:
+            QMessageBox.critical(self, "alice.exe not found", str(e))
+            return False
+        except AliceToolsOutdated as e:
+            QMessageBox.critical(self, "alice.exe is too old", str(e))
+            return False
+        return True
 
     # ===== logging
 
@@ -219,30 +234,33 @@ class MainWindow(QMainWindow):
     # ===== project lifecycle
 
     def new_project(self) -> None:
-        dialog = NewProjectDialog(self)
+        native = self._use_native_formats()
+        dialog = NewProjectDialog(self, needs_alice_exe=not native)
         if not dialog.exec():
             return
         archive_path, alice_exe, output_dir, project_file = dialog.values()
 
         tools = AliceTools(alice_exe)
-        try:
-            tools.check_available()
-            tools.check_supported()
-        except FileNotFoundError as e:
-            QMessageBox.critical(self, "alice.exe not found", str(e))
-            return
-        except AliceToolsOutdated as e:
-            QMessageBox.critical(self, "alice.exe is too old", str(e))
+        if not native and not self._alice_exe_usable(tools):
             return
 
         manifest_path = Path(output_dir) / "manifest.txt"
         self.log(f"Extracting {archive_path!r} -> {output_dir!r} ...")
         self.extract_button.setEnabled(False)
 
-        def job(on_output):
-            return tools.extract(
-                archive_path, output_dir, manifest_path=manifest_path, on_output=on_output
-            )
+        if native:
+            def job(on_output):
+                return extract_archive(
+                    archive_path,
+                    output_dir,
+                    manifest_path,
+                    on_progress=lambda path: on_output(f"extracting {path}"),
+                )
+        else:
+            def job(on_output):
+                return tools.extract(
+                    archive_path, output_dir, manifest_path=manifest_path, on_output=on_output
+                )
 
         # `tools` stays a local until the extract succeeds. Nothing is
         # written to self until there is a whole project to write.
@@ -515,16 +533,7 @@ class MainWindow(QMainWindow):
         way. Only the operations that actually shell out need this, so the
         check lives here rather than blocking the project from opening.
         """
-        try:
-            session.tools.check_available()
-            session.tools.check_supported()
-        except FileNotFoundError as e:
-            QMessageBox.critical(self, "alice.exe not found", str(e))
-            return False
-        except AliceToolsOutdated as e:
-            QMessageBox.critical(self, "alice.exe is too old", str(e))
-            return False
-        return True
+        return self._alice_exe_usable(session.tools)
 
     def _repack_blocked_reason(self) -> str | None:
         """Why this project cannot be repacked, or None if it can.
@@ -783,17 +792,27 @@ class MainWindow(QMainWindow):
         if self.session is None:
             return
         session = self.session
-        if not self._tools_usable(session):
+        native = self._use_native_formats()
+        if not native and not self._tools_usable(session):
             return
         self.log("Re-extracting...")
 
-        def job(on_output):
-            return session.tools.extract(
-                session.project.archive_path,
-                session.project.extract_dir,
-                manifest_path=Path(session.project.manifest_path),
-                on_output=on_output,
-            )
+        if native:
+            def job(on_output):
+                return extract_archive(
+                    session.project.archive_path,
+                    session.project.extract_dir,
+                    Path(session.project.manifest_path),
+                    on_progress=lambda path: on_output(f"extracting {path}"),
+                )
+        else:
+            def job(on_output):
+                return session.tools.extract(
+                    session.project.archive_path,
+                    session.project.extract_dir,
+                    manifest_path=Path(session.project.manifest_path),
+                    on_output=on_output,
+                )
 
         self._run_worker(job, on_success=self._on_reextract_done)
 
@@ -823,7 +842,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Repack not possible", blocked)
             return
         session = self.session
-        if not self._tools_usable(session):
+        native = self._use_native_formats()
+        if not native and not self._tools_usable(session):
             return
         self.repack_button.setEnabled(False)
 
@@ -831,7 +851,7 @@ class MainWindow(QMainWindow):
             self._run_ald_repack(session)
             return
 
-        if self._use_native_repack():
+        if self._use_native_formats():
             self._run_native_afa_repack(session)
             return
 

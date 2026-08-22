@@ -26,7 +26,9 @@ from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 
+from . import formats
 from .alice_tools import AliceTools, AliceToolsError, ensure_archive_backup
+from .formats import qnt
 from .ald import AldArchive, AldEntry, read_ald, write_ald
 from .manifest import Manifest
 from .paths import basename
@@ -123,12 +125,15 @@ def _index_entries_by_stem(archive: AldArchive) -> dict[str, AldEntry]:
     return by_stem
 
 
-def _encode_png_as_qnt(tools: AliceTools, image: Image.Image, work_dir: Path, stem: str) -> bytes:
-    png_path = work_dir / f"{stem}.png"
-    qnt_path = work_dir / f"{stem}.{REENCODE_FORMAT}"
-    image.save(png_path, "PNG")
-    tools.cg_convert(png_path, qnt_path, to=REENCODE_FORMAT)
-    return qnt_path.read_bytes()
+def _encode_qnt(image: Image.Image) -> bytes:
+    """Encode a censored image as QNT.
+
+    Always done here rather than through alice.exe. The built in encoder
+    was checked against alice-tools across every distinct image shape in a
+    real archive and writes the same bytes, so there is nothing to choose
+    between them beyond one of them needing a subprocess.
+    """
+    return qnt.encode(image)
 
 
 def repack_ald(
@@ -179,7 +184,7 @@ def repack_ald(
                 # folder still existing or still matching.
                 png_bytes = _decode_entry_to_image(tools, entry, work_dir)
                 rendered = render_layers(png_bytes, layers, sticker_resolver=sticker_resolver)
-                data = _encode_png_as_qnt(tools, rendered, work_dir, _stem(entry.name))
+                data = _encode_qnt(rendered)
             except (OSError, UnidentifiedImageError, RenderError, AliceToolsError) as e:
                 result.errors[path] = str(e)
                 continue
@@ -209,13 +214,22 @@ def repack_ald(
     return result
 
 
-def _decode_entry_to_image(tools: AliceTools, entry: AldEntry, work_dir: Path) -> Image.Image:
+def _decode_entry_to_image(
+    tools: AliceTools | None, entry: AldEntry, work_dir: Path
+) -> Image.Image:
     """Turn one archive entry's raw bytes into a PIL image.
 
-    Goes through alice-tools rather than Pillow because the formats are
-    AliceSoft's own. QNT and AJP mean nothing to Pillow, and alice-tools
-    reads both.
+    Read here when the format is one this build knows, which is every image
+    a Rance 02 archive holds. Otherwise it goes out to alice-tools, which
+    still reads formats this does not.
     """
+    if formats.can_decode(entry.data):
+        return formats.decode_image(entry.data)
+    if tools is None:
+        raise AldRepackError(
+            f"{entry.name} is a format this build cannot read and there is no "
+            f"alice.exe to fall back on"
+        )
     src = work_dir / f"in_{entry.index}.{entry.name.rsplit('.', 1)[-1].lower()}"
     dst = work_dir / f"in_{entry.index}.png"
     src.write_bytes(entry.data)

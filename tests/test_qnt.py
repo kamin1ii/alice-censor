@@ -246,3 +246,19 @@ def test_the_decoder_agrees_with_pillow_on_a_known_picture():
     assert got.getpixel((5, 0)) == (0, 255, 0, 255)
     assert got.getpixel((0, 3)) == (0, 0, 255, 255)
     assert got.getpixel((5, 3)) == (10, 20, 30, 40)
+
+
+def test_a_single_pixel_wide_image_reads_its_stored_transparency():
+    """libsys4 leaves this one uninitialised and Rance 03 contains one.
+
+    Its transparency reader only writes the first pixel when the image is
+    wider than one, so a one wide picture comes back holding whatever was
+    in the buffer. alice.exe read the same file as 70 on one run and 96 on
+    another. What the file actually stores here is nothing at all.
+    """
+    pixels = bytes([10, 20, 30, 0, 40, 50, 60, 0, 70, 80, 90, 0])
+
+    got = decode(make_qnt(pixels, 1, 3))
+
+    assert _rgba(got) == pixels
+    assert got.getpixel((0, 0))[3] == 0

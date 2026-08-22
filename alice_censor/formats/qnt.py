@@ -36,6 +36,13 @@ it the Average filter and adds the stored value where QNT subtracts it, so
 negating every byte turns one into the other. That lets Pillow undo the
 prediction in C, and leaves this module doing only work that byte slicing
 can do in bulk.
+
+One known difference from libsys4. Its transparency reader guards its first
+write with a test for a width above one, so a picture a single pixel wide
+never has that pixel written and comes back holding whatever was in the
+buffer already. Rance 03 has one, and alice.exe read its transparency as 70
+on one run and 96 on another from the same bytes. This module reads what the
+file stores, which for that picture is nothing at all.
 """
 
 from __future__ import annotations

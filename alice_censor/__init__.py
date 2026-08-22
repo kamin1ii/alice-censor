@@ -1,3 +1,3 @@
 """Alice Censor, a desktop app for censoring CG extracted from AliceSoft archives."""
 
-__version__ = "0.4.2"
+__version__ = "0.5.0"

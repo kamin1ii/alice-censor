@@ -1,24 +1,15 @@
 """The Advanced menu switch that turns on built in format support.
 
-The switch belongs to the installation rather than to a project, so these
-point QSettings at a scratch location instead of writing to wherever the
-machine running the tests keeps its real preferences.
+The switch belongs to the installation rather than to a project. The
+isolated_settings fixture in conftest keeps every test here, and everywhere
+else, away from the machine's real preferences.
 """
 
 import pytest
-from PySide6.QtCore import QSettings
 
 from alice_censor.gui import settings as app_settings
 from alice_censor.gui.main_window import MainWindow
 from alice_censor.manifest import ManifestFormat
-
-
-@pytest.fixture(autouse=True)
-def scratch_settings(tmp_path, monkeypatch):
-    """Keep the real preferences out of it, in both directions."""
-    store = QSettings(str(tmp_path / "prefs.ini"), QSettings.IniFormat)
-    monkeypatch.setattr(app_settings, "_store", lambda: store)
-    yield store
 
 
 def test_it_is_off_until_someone_turns_it_on(qapp):

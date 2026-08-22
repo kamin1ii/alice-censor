@@ -29,7 +29,7 @@ from PIL import Image, UnidentifiedImageError
 from . import formats
 from .alice_tools import AliceTools, AliceToolsError, ensure_archive_backup
 from .formats import qnt
-from .ald import AldArchive, AldEntry, read_ald, write_ald
+from .formats.ald import AldArchive, AldEntry, read_ald, write_ald
 from .manifest import Manifest
 from .paths import basename
 from .project import ProjectState

@@ -11,7 +11,7 @@ import struct
 
 import pytest
 
-from alice_censor.ald import (
+from alice_censor.formats.ald import (
     SECTOR,
     AldArchive,
     AldEntry,
@@ -145,7 +145,7 @@ def test_failed_write_leaves_no_temp_file_behind(tmp_path, monkeypatch):
     path = tmp_path / "failA.ald"
     archive = _archive(AldEntry(index=0, name="a.QNT", data=b"x"))
 
-    import alice_censor.ald as ald_module
+    import alice_censor.formats.ald as ald_module
 
     def boom(entry):
         raise OSError("disk full")

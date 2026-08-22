@@ -9,10 +9,14 @@ be lifted into a library of its own once it covers enough ground.
     DCF   read only, the chunks that differ from another image
     PMS   read only, the run length format an AJP mask uses
     AFA   read and write, the container alice-tools calls .afa
-    ALD   read and write, and it lives one level up in ald.py for now
+    ALD   read and write, the older container, sectors and a pointer table
 
 Nothing writes AJP or DCF, because no encoder for either exists anywhere.
 An edited image of either kind is written back as QNT.
+
+What is not here is manifest.py, which parses the text file alice-tools uses
+to describe a pack job. That is alice-tools' own format rather than one of
+AliceSoft's, and this package is the AliceSoft side.
 
 decode_image below is the one place that knows which format is which. Every
 caller that has bytes and wants a picture should come through it rather than

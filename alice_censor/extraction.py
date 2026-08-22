@@ -27,7 +27,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from .ald import read_ald
+from .formats.ald import read_ald
 from . import formats
 from .formats import dcf, qnt
 from .formats.afa import AfaError, AfaReader

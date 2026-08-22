@@ -70,10 +70,6 @@ nightly alice.exe and not 0.13.0.
   manifest says should be in it, rather than trusting that the write reported success. A missing
   file, an empty one, or a change in the order the game indexes into fails verification with an
   explanation instead of a silent "Repack complete".
-- The same check also looks for a `?` in any filename. That guards the alice-tools path only,
-  where [issue #92](https://github.com/nunuhara/alice-tools/issues/92) could corrupt a name while
-  `ar pack` still reported success. Alice Censor writes the file table itself now, so with the
-  built in support on, which is the default, that cannot happen at all.
 - Re-opening a project rescans the extraction folder and reports what is new, changed, or missing
   since last time, so a game update does not mean re-reviewing everything.
 - The project file is written atomically (temp file plus rename), so a crash mid-save cannot
@@ -206,21 +202,29 @@ re-extracting without losing a single review decision or region.
 
 ```
 alice_censor/
+  formats/          Readers and writers for the formats themselves
+    qnt.py            QNT images, read and write, lossless, most of a CG archive
+    ajp.py            AJP images, read, a scrambled JPEG plus a separate mask
+    pms.py            PMS, read, the run length format an AJP mask is stored in
+    dcf.py            DCF, read, the chunks that differ from another image
+    afa.py            AFA archives, read and write
+    ald.py            ALD archives, read and write
+  extraction.py     Takes an archive apart into PNG files and a manifest
+  afa_repack.py     Rebuilds an .afa with the censored images substituted in
+  ald_repack.py     The same for an .ald
+  export.py         The alice-tools route instead, an output folder for ar pack
   manifest.py       Parser and writer for alice-tools ALICEPACK manifests
   alice_tools.py    Subprocess wrapper over the alice CLI, archive backups
   project.py        The .acproj.json schema: statuses, groups, censor layers
   scanning.py       Reconciles a manifest against saved state and files on disk
   grouping.py       Scene grouping, by naming convention or numeric proximity
   rendering.py      The single render path shared by preview, thumbnails and export
-  export.py         Renders layers to an output folder, curates the pack cache
-  verify.py         Post-repack integrity check
-  ald.py            Reader and writer for the ALD archive format
-  ald_repack.py     Rebuilds an .ald with the censored images substituted in
+  verify.py         Post-repack integrity check for the alice-tools route
   stickers.py       The managed sticker library
   paths.py          Archive-internal path handling
   session.py        The open project, its manifest and its tools as one value
   share.py          Packaging a project so someone else can apply it
-  gui/              Main window, project dialog, background workers
+  gui/              Main window, project dialog, settings, background workers
   gallery/          Thumbnail grid, model, folder tree, disk thumbnail cache
   editor/           Region canvas, layer panel, batch apply, sticker picker
 tests/              519 tests, no alice.exe or real archives required
@@ -233,6 +237,10 @@ make_icon.py        Regenerate the app icon from a source image
 `rendering.py` is deliberately the only place layers get applied to pixels. The editor preview,
 the gallery thumbnails, and the export pipeline all call it, so what you see in the editor cannot
 drift from what ends up in the archive.
+
+`formats/` imports nothing from the rest of the app, so it could be lifted out into a library of
+its own. `formats/__init__.py` is the only place that decides which format a given lump of bytes
+is; nothing else tests magic numbers for itself.
 
 ## Development
 

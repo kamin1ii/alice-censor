@@ -1,4 +1,4 @@
-"""Reader for AFA archives, the AlicArch container alice-tools calls .afa.
+"""Reader and writer for AFA archives, the AlicArch container alice-tools calls .afa.
 
 Derived from afa.c in libsys4, copyright 2019 Nunuhara Cabbage, GPL-2.0-or-later.
 Translated to Python and restructured for Alice Censor in 2026 by kamin1ii, and
@@ -25,8 +25,10 @@ an entry carries an id at all cannot be read from the header, so the table
 has to be walked once assuming it does, on the understanding that only the
 right guess consumes the table exactly.
 
-This module reads. Writing is a separate job, because an archive is large
-enough that rebuilding one has to stream rather than sit in memory.
+Writing streams rather than building the archive in memory, because a CG
+archive runs to hundreds of megabytes. The cost is that each entry has to
+declare its size before its bytes are asked for, since the table is written
+first.
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ import struct
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Callable, Sequence
 from typing import BinaryIO
 
 MAGIC = b"AFAH"
@@ -76,6 +79,7 @@ class AfaReader:
         self.path = Path(path)
         self._file: BinaryIO | None = None
         self.version = 0
+        self.header_unknown = 1
         self.data_start = 0
         self.data_size = 0
         self.has_ids = False
@@ -120,6 +124,9 @@ class AfaReader:
             raise AfaError(f"{self.path.name} has a damaged header")
 
         self.version = struct.unpack_from("<I", header, 16)[0]
+        # A field with no known meaning, one in every archive seen so far.
+        # Carried rather than assumed, so a rebuild cannot quietly change it.
+        self.header_unknown = struct.unpack_from("<I", header, 20)[0]
         self.data_start = struct.unpack_from("<I", header, 24)[0]
         table_size = struct.unpack_from("<I", header, 32)[0] - 16
         table_unpacked = struct.unpack_from("<I", header, 36)[0]
@@ -229,3 +236,182 @@ def _read_table(table: bytes, count: int, has_ids: bool) -> list[AfaEntry]:
 def _decode_name(raw: bytes) -> str:
     """Names are Shift JIS, and a bad byte should not lose the whole archive."""
     return raw.decode(NAME_ENCODING, errors="replace").replace("\\", "/")
+
+
+# ===== writing
+#
+# Derived from write_afa.c in alice-tools, copyright 2019 Nunuhara Cabbage,
+# GPL-2.0-or-later, with the layout choices checked against a real archive
+# rather than taken from it. The two disagree in four places, and the real
+# archive wins each time, because rebuilding one has to come out byte for
+# byte identical when nothing was edited.
+#
+#   alice-tools rounds every entry up to eight bytes. AliceSoft packs them
+#   end to end with no padding at all.
+#   alice-tools writes zero for the two unknown fields in each entry, which
+#   throws away whatever the original held. Those are carried across here.
+#   alice-tools writes no padding after a name. AliceSoft pads every one out
+#   to a multiple of four, adding four when it is already there.
+#   alice-tools fills the gap before the data with zeroes. AliceSoft fills
+#   it with 0xFF.
+
+DUMMY_CHUNK = b"DUMM"
+DEFAULT_FILLER = 0xFF
+DEFAULT_ALIGNMENT = 0x1000
+NAME_PADDING = 4
+TABLE_LEVEL = 9
+
+
+@dataclass(frozen=True)
+class OutgoingEntry:
+    """One file on its way into an archive.
+
+    The bytes arrive through a callable rather than as a value so that
+    rebuilding a large archive does not need it all in memory at once. The
+    size has to be known in advance because the table is written before the
+    data, and read is called exactly once, after the table is already down.
+    """
+    name: str
+    size: int
+    read: Callable[[], bytes]
+    raw_name: bytes = b""
+    unknown0: int = 0
+    unknown1: int = 0
+    number: int = 0
+
+
+def copy_of(reader: AfaReader, entry: AfaEntry) -> OutgoingEntry:
+    """An entry passed through from one archive to another, untouched."""
+    return OutgoingEntry(
+        name=entry.name,
+        size=entry.size,
+        read=lambda: reader.read(entry),
+        raw_name=entry.raw_name,
+        unknown0=entry.unknown0,
+        unknown1=entry.unknown1,
+        number=entry.number,
+    )
+
+
+def replacement_for(entry: AfaEntry, data: bytes) -> OutgoingEntry:
+    """An entry whose contents changed but which keeps its place and name."""
+    return OutgoingEntry(
+        name=entry.name,
+        size=len(data),
+        read=lambda: data,
+        raw_name=entry.raw_name,
+        unknown0=entry.unknown0,
+        unknown1=entry.unknown1,
+        number=entry.number,
+    )
+
+
+def write_afa(
+    path: str | Path,
+    entries: Sequence[OutgoingEntry],
+    *,
+    version: int = 2,
+    has_ids: bool = False,
+    data_start: int | None = None,
+    alignment: int = DEFAULT_ALIGNMENT,
+    entry_alignment: int = 1,
+    filler: int = DEFAULT_FILLER,
+    header_unknown: int = 1,
+) -> None:
+    """Write an AFA archive.
+
+    Pass data_start to put the data section exactly where another archive
+    had it. Left alone it is rounded up to the next boundary, which is what
+    alice-tools does and what ALDExplorer needs to open the result.
+    """
+    if version not in (1, 2):
+        raise AfaError(f"cannot write AFA version {version}")
+    if not entries:
+        raise AfaError("an archive needs at least one file")
+
+    table, offsets = _build_table(entries, has_ids or version == 1, entry_alignment)
+    packed = zlib.compress(table, TABLE_LEVEL)
+
+    table_end = HEADER_SIZE + len(packed)
+    if data_start is None:
+        data_start = (table_end + alignment - 1) & ~(alignment - 1)
+    if data_start < table_end:
+        raise AfaError(
+            f"the data section cannot start at {data_start}, the table ends at {table_end}"
+        )
+
+    last = offsets[-1] + _round_up(entries[-1].size, entry_alignment)
+    header = bytearray(HEADER_SIZE)
+    header[0:4] = MAGIC
+    struct.pack_into("<I", header, 4, 0x1C)
+    header[8:16] = LABEL
+    struct.pack_into("<3I", header, 16, version, header_unknown, data_start)
+    header[28:32] = b"INFO"
+    struct.pack_into("<3I", header, 32, len(packed) + 16, len(table), len(entries))
+
+    path = Path(path)
+    with path.open("wb") as out:
+        out.write(header)
+        out.write(packed)
+        _write_gap(out, data_start - table_end, filler)
+        out.write(b"DATA" + struct.pack("<I", last))
+        for entry, offset in zip(entries, offsets):
+            data = entry.read()
+            if len(data) != entry.size:
+                raise AfaError(
+                    f"{entry.name} said it was {entry.size} bytes and gave {len(data)}"
+                )
+            out.write(data)
+            # Padding between entries is zero rather than the gap filler,
+            # and with the default alignment there is none of it at all.
+            out.write(bytes(_round_up(entry.size, entry_alignment) - entry.size))
+
+
+def _build_table(
+    entries: Sequence[OutgoingEntry], has_ids: bool, entry_alignment: int
+) -> tuple[bytes, list[int]]:
+    table = bytearray()
+    offsets: list[int] = []
+    # The DATA marker sits at the front of the data section, so the first
+    # file starts eight bytes into it.
+    offset = 8
+    for index, entry in enumerate(entries):
+        raw = entry.raw_name or _pad_name(entry.name)
+        real = len(_encode_name(entry.name))
+        if real > len(raw):
+            raise AfaError(f"the stored name for {entry.name} is shorter than the name")
+        table += struct.pack("<2I", real, len(raw)) + raw
+        if has_ids:
+            table += struct.pack("<i", entry.number + 1)
+        table += struct.pack("<4I", entry.unknown0, entry.unknown1, offset, entry.size)
+        offsets.append(offset)
+        offset += _round_up(entry.size, entry_alignment)
+    return bytes(table), offsets
+
+
+def _write_gap(out: BinaryIO, pad: int, filler: int) -> None:
+    """Fill the space between the table and the data section.
+
+    Anything from eight bytes up gets a marked chunk, so a reader walking
+    the file sees a named region rather than a stretch of nothing.
+    """
+    if pad <= 0:
+        return
+    if pad >= 8:
+        out.write(DUMMY_CHUNK + struct.pack("<I", pad))
+        pad -= 8
+    out.write(bytes([filler]) * pad)
+
+
+def _encode_name(name: str) -> bytes:
+    return name.replace("/", "\\").encode(NAME_ENCODING)
+
+
+def _pad_name(name: str) -> bytes:
+    """Names are padded out to a multiple of four, always by at least one."""
+    raw = _encode_name(name)
+    return raw + b"\0" * (NAME_PADDING - len(raw) % NAME_PADDING)
+
+
+def _round_up(value: int, to: int) -> int:
+    return value if to <= 1 else (value + to - 1) & ~(to - 1)

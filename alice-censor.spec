@@ -45,6 +45,11 @@ EXCLUDES = EXCLUDED_QT_MODULES + [
     # Pillow's AVIF codec is 7.5 MB on its own. The sticker library and the
     # archives this reads are png, jpg, webp, bmp, gif and qnt, never avif.
     "PIL._avif", "PIL.AvifImagePlugin",
+    # Repacking encodes images on a thread pool, and importing
+    # concurrent.futures drags in the process pool with it. Nothing here
+    # ever touches ProcessPoolExecutor, and the package only imports it
+    # when something asks for it by name, so it never loads at runtime.
+    "multiprocessing", "concurrent.futures.process",
 ]
 
 # Binaries no QtWidgets app loads, matched on filename. Kept as a

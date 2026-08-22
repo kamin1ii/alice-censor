@@ -190,3 +190,58 @@ def _rows_with_ink(image):
                 rows.add(y)
                 break
     return len(rows)
+
+
+def test_text_still_renders_when_pillow_has_no_font_module(monkeypatch):
+    """A build without Pillow's font C module raises ImportError, not the
+    OSError a missing file gives, and it must not stop a render.
+
+    Pillow signals that state by leaving its `core` attribute as something
+    other than a module, which is also how its own bitmap fallback knows to
+    step in, so both are set here rather than only the one.
+    """
+    from PIL import ImageFont
+
+    def refuse(*args, **kwargs):
+        raise ImportError("The _imagingft C module is not installed")
+
+    monkeypatch.setattr(ImageFont, "core", object())
+    monkeypatch.setattr(ImageFont, "truetype", refuse)
+    fonts._load.cache_clear()
+    fonts._first_present.cache_clear()
+    fonts.available.cache_clear()
+    try:
+        got = render_layers(base(), [text_layer()])
+    finally:
+        fonts._load.cache_clear()
+        fonts._first_present.cache_clear()
+        fonts.available.cache_clear()
+
+    assert changed_outside_box(got) == 0
+    assert set(_rgba(pixels_in_box(got))) != {BACKDROP}, "the box is still drawn"
+
+
+def test_japanese_on_a_latin_only_fallback_font_keeps_the_box(monkeypatch):
+    """The bitmap font Pillow falls back to cannot draw outside latin-1.
+
+    Losing the caption is bad. Losing the repack it was part of, to an
+    exception from deep inside a text measurement, is much worse.
+    """
+    from PIL import ImageFont
+
+    monkeypatch.setattr(ImageFont, "core", object())
+    monkeypatch.setattr(
+        ImageFont, "truetype",
+        lambda *a, **k: (_ for _ in ()).throw(ImportError("no _imagingft")),
+    )
+    for cached in (fonts._load, fonts._first_present, fonts.available):
+        cached.cache_clear()
+    try:
+        got = render_layers(base(), [text_layer(text="検閲済み",
+                                                background_color="#123456")])
+    finally:
+        for cached in (fonts._load, fonts._first_present, fonts.available):
+            cached.cache_clear()
+
+    assert pixels_in_box(got).getpixel((0, 0)) == (0x12, 0x34, 0x56, 255)
+    assert changed_outside_box(got) == 0

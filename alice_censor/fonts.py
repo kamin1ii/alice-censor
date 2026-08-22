@@ -30,6 +30,12 @@ DEFAULT_FAMILY = "Gothic"
 # Below this a font stops being legible and Pillow starts refusing sizes.
 MIN_SIZE = 6
 
+# A missing file raises OSError. A build without Pillow's font C module
+# raises ImportError instead, from a different line and with nothing to do
+# with the file asked for. Both mean the same thing here, that this face
+# cannot be had, and neither should stop a render.
+_UNAVAILABLE = (OSError, ImportError)
+
 
 @lru_cache(maxsize=1)
 def available() -> tuple[str, ...]:
@@ -54,7 +60,7 @@ def _load(family: str, size: int):
         if path is not None:
             try:
                 return ImageFont.truetype(path, size)
-            except OSError:
+            except _UNAVAILABLE:
                 continue
     return ImageFont.load_default()
 
@@ -64,7 +70,7 @@ def _first_present(family: str) -> str | None:
     for filename in FAMILIES.get(family, ()):
         try:
             ImageFont.truetype(filename, 12)
-        except OSError:
+        except _UNAVAILABLE:
             continue
         return filename
     return None

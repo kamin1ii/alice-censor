@@ -237,7 +237,14 @@ def _apply_text(image: Image.Image, box: RectPx, params: dict) -> None:
 
     text = str(params.get("text", ""))
     if text.strip():
-        _draw_caption(draw, (width, height), text, params, opacity, image.size[1])
+        try:
+            _draw_caption(draw, (width, height), text, params, opacity, image.size[1])
+        except UnicodeEncodeError:
+            # No real font could be loaded and Pillow fell back to its own
+            # bitmap one, which only knows latin-1. Nothing can be drawn for
+            # text outside that, and losing the caption is a great deal
+            # better than losing the repack it was part of.
+            pass
 
     composited = Image.alpha_composite(region, panel)
     image.paste(composited.convert(image.mode) if image.mode != "RGBA" else composited, box)
@@ -288,10 +295,21 @@ def _fit_text(text, family, wanted, inner_width, inner_height, draw):
 
 
 def _line_height(draw, font) -> int:
-    # Measured from a character with both an ascender and a descender, so
-    # every line gets the same spacing whatever happens to be on it.
-    top, bottom = draw.textbbox((0, 0), "Agあ", font=font)[1::2]
-    return max(1, bottom - top) + 2
+    """Line spacing, measured rather than guessed.
+
+    From a sample with an ascender, a descender and a full width character,
+    so every line in a block gets the same spacing whatever happens to be
+    on it. A bitmap fallback font knows only latin-1 and refuses the last
+    of those, hence the simpler samples behind it.
+    """
+    for sample in ("Agあ", "Ag", "A"):
+        try:
+            top, bottom = draw.textbbox((0, 0), sample, font=font)[1::2]
+        except UnicodeEncodeError:
+            continue
+        if bottom > top:
+            return bottom - top + 2
+    return max(1, int(getattr(font, "size", 10))) + 2
 
 
 def _wrap(text: str, font, width: int, draw) -> list[str]:

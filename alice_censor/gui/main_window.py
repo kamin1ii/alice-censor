@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..afa_repack import repack_afa_in_place, verify_afa
 from ..alice_tools import AliceTools, AliceToolsOutdated
 from ..editor.editor_dialog import RegionEditorDialog
 from ..export import render_export
@@ -32,6 +33,7 @@ from ..stickers import make_sticker_resolver
 from ..verify import VerifyResult, verify_archive_contents
 from .icon import ICON_PATH
 from .new_project_dialog import NewProjectDialog
+from .settings import native_formats_enabled, set_native_formats_enabled
 from .workers import CommandWorker
 
 
@@ -113,6 +115,40 @@ class MainWindow(QMainWindow):
         self._import_action = file_menu.addAction("&Open Shared Project…", self.import_bundle)
         file_menu.addSeparator()
         file_menu.addAction("E&xit", self.close)
+
+        advanced_menu = self.menuBar().addMenu("&Advanced")
+        self._native_action = advanced_menu.addAction(
+            "Use &built in format support (experimental)"
+        )
+        self._native_action.setCheckable(True)
+        self._native_action.setChecked(native_formats_enabled())
+        self._native_action.setToolTip(
+            "Repack .afa archives without alice.exe, copying every image you "
+            "did not edit as the bytes it already was."
+        )
+        self._native_action.toggled.connect(self._on_native_formats_toggled)
+
+    def _on_native_formats_toggled(self, enabled: bool) -> None:
+        set_native_formats_enabled(enabled)
+        if enabled:
+            self.log(
+                "Built in format support on. Repacking an .afa will rebuild it "
+                "here rather than through alice.exe ar pack."
+            )
+        else:
+            self.log("Built in format support off. Repacking uses alice.exe ar pack.")
+        # The switch is reachable with nothing open, which is a reasonable
+        # time to set it, and there is no summary to refresh in that case.
+        if self.session is not None:
+            self._refresh_summary()
+
+    def _use_native_repack(self) -> bool:
+        """Whether this repack should go through the built in writer.
+
+        Only .afa reaches here. The .ald path has always been built in,
+        because alice-tools cannot write that format at all.
+        """
+        return bool(self._native_action.isChecked())
 
     # ===== logging
 
@@ -795,6 +831,10 @@ class MainWindow(QMainWindow):
             self._run_ald_repack(session)
             return
 
+        if self._use_native_repack():
+            self._run_native_afa_repack(session)
+            return
+
         self.log("Rendering censored images for export...")
 
         def job(on_output):
@@ -806,6 +846,71 @@ class MainWindow(QMainWindow):
             )
 
         self._run_worker(job, on_success=self._on_export_rendered)
+
+    def _run_native_afa_repack(self, session: OpenProject) -> None:
+        """Rebuild an .afa here rather than through `ar pack`.
+
+        Same shape as the .ald path. There is no export folder and no
+        second subprocess stage, and every image without layers is copied
+        out of the pristine backup as the bytes it already was.
+        """
+        reply = QMessageBox.question(
+            self,
+            "Rebuild .afa archive?",
+            "Built in format support is on, so this rebuilds the archive here "
+            "instead of running alice.exe ar pack.\n\n"
+            "Rebuilding an untouched archive this way reproduces it byte for byte, "
+            "and images you did not edit are copied without being decoded. Edited "
+            "ones are written back as .qnt.\n\n"
+            f"Overwrite {session.manifest.resolved_archive_path()} now?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            self.log("Rebuild cancelled.")
+            self.repack_button.setEnabled(True)
+            return
+
+        self.log("Rebuilding .afa archive with built in format support...")
+
+        def job(on_output):
+            return repack_afa_in_place(
+                session.project,
+                session.manifest,
+                extract_dir=session.project.extract_dir,
+                sticker_resolver=make_sticker_resolver(session.project.sticker_dir),
+                on_progress=lambda path: on_output(f"reading {path}"),
+            )
+
+        self._run_worker(job, on_success=self._on_native_afa_repack_done)
+
+    def _on_native_afa_repack_done(self, result) -> None:
+        self.repack_button.setEnabled(True)
+        lines = [
+            f"Rebuilt {result.archive_path}",
+            f"{len(result.rebuilt_paths)} image(s) censored and re-encoded, "
+            f"{result.copied_count} copied unchanged, byte for byte.",
+        ]
+        if result.converted_formats:
+            lines.append(
+                f"{len(result.converted_formats)} edited image(s) were written back "
+                f"as .qnt because this build has no encoder for the format they "
+                f"arrived in. The archive grows as a result."
+            )
+        for path, message in result.errors.items():
+            self.log(f"  ERROR {path}: {message}")
+
+        problems = verify_afa(result.archive_path, result)
+        if result.errors or problems:
+            lines.extend(problems)
+            if result.errors:
+                lines.append(f"{len(result.errors)} image(s) failed, listed above.")
+            self.log("\n".join(lines))
+            QMessageBox.warning(self, "Rebuilt with problems", "\n\n".join(lines))
+        else:
+            lines.append("Read back and verified.")
+            self.log("\n".join(lines))
+            QMessageBox.information(self, "Repack complete", "\n\n".join(lines))
 
     def _run_ald_repack(self, session: OpenProject) -> None:
         """Rebuild an .ald in place, since `ar pack` cannot write one.

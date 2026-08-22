@@ -393,6 +393,24 @@ def test_an_unwritable_version_is_refused(tmp_path):
         write_afa(tmp_path / "out.afa", [_outgoing("a.qnt", b"x")], version=3)
 
 
-def test_a_data_section_that_would_overlap_the_table_is_refused(tmp_path):
+def test_a_data_section_that_would_overlap_the_table_is_moved_along(tmp_path):
+    """Asking for the source archive's spot is a preference, not a demand.
+
+    A rebuild passes the original position so an untouched archive comes
+    out identical, and an edit that lengthens a name can leave the table
+    too big for it. Moving the section is the right answer there.
+    """
+    path = tmp_path / "out.afa"
+
+    write_afa(path, [_outgoing(n, d) for n, d in SAMPLE], data_start=8)
+
+    with AfaReader(path) as ar:
+        assert ar.data_start > 8
+        assert ar.data_start % 0x1000 == 0
+        assert [ar.read(e) for e in ar] == [d for _, d in SAMPLE]
+
+
+def test_it_can_be_told_to_refuse_instead(tmp_path):
     with pytest.raises(AfaError, match="cannot start at"):
-        write_afa(tmp_path / "out.afa", [_outgoing("a.qnt", b"x")], data_start=8)
+        write_afa(tmp_path / "out.afa", [_outgoing("a.qnt", b"x")],
+                  data_start=8, allow_moving_data=False)

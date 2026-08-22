@@ -317,12 +317,16 @@ def write_afa(
     entry_alignment: int = 1,
     filler: int = DEFAULT_FILLER,
     header_unknown: int = 1,
+    allow_moving_data: bool = True,
 ) -> None:
     """Write an AFA archive.
 
     Pass data_start to put the data section exactly where another archive
-    had it. Left alone it is rounded up to the next boundary, which is what
-    alice-tools does and what ALDExplorer needs to open the result.
+    had it, which is what makes an untouched rebuild come out byte for byte
+    identical. If the table has outgrown that spot the section is moved
+    along instead, unless allow_moving_data says to refuse. Left alone it is
+    rounded up to the next boundary, which is what alice-tools does and what
+    ALDExplorer needs to open the result.
     """
     if version not in (1, 2):
         raise AfaError(f"cannot write AFA version {version}")
@@ -333,12 +337,18 @@ def write_afa(
     packed = zlib.compress(table, TABLE_LEVEL)
 
     table_end = HEADER_SIZE + len(packed)
+    aligned = (table_end + alignment - 1) & ~(alignment - 1)
     if data_start is None:
-        data_start = (table_end + alignment - 1) & ~(alignment - 1)
-    if data_start < table_end:
-        raise AfaError(
-            f"the data section cannot start at {data_start}, the table ends at {table_end}"
-        )
+        data_start = aligned
+    elif data_start < table_end:
+        if not allow_moving_data:
+            raise AfaError(
+                f"the data section cannot start at {data_start}, "
+                f"the table ends at {table_end}"
+            )
+        # Asked for a spot the table has outgrown, which happens when an
+        # entry gained a longer name. Better to move it than to refuse.
+        data_start = aligned
 
     last = offsets[-1] + _round_up(entries[-1].size, entry_alignment)
     header = bytearray(HEADER_SIZE)

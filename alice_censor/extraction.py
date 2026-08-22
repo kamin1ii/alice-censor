@@ -38,6 +38,11 @@ DEFAULT_WORKERS = max(2, min(8, os.cpu_count() or 4))
 
 MAGIC_AFA = b"AFAH"
 
+# Enough of an entry to tell which format it is and to read its header. A
+# DCF header is capped at 4096 bytes by the format and carries the name of
+# the image it differs from, which is the largest thing planning needs.
+PEEK = 8192
+
 # What the manifest should say to pack an entry back. Anything this package
 # cannot write becomes QNT, which is what alice-tools does too.
 PACKABLE = "qnt"
@@ -62,11 +67,16 @@ class ExtractResult:
 
 @dataclass
 class _Item:
-    """One archive entry on its way to becoming a PNG."""
+    """One archive entry on its way to becoming a PNG.
+
+    Holds where to find the bytes rather than the bytes themselves. They
+    are read in the wave that decodes them and dropped straight after, so
+    an archive bigger than memory still extracts.
+    """
+    index: int
     name: str
     path: str  # what the manifest calls it, the name with a .png extension
-    data: bytes
-    base: bytes | None = None  # the image a DCF differs from
+    base_index: int | None = None  # the image a DCF differs from
     dst_format: str = PACKABLE
     extra: str | None = None
 
@@ -98,7 +108,8 @@ def extract_archive(
     opener = _open_afa if is_afa else _open_ald
     with opener(archive_path) as source:
         items = _plan(source, result)
-        _write_all(items, output_dir, result, on_progress=on_progress, workers=workers)
+        _write_all(items, source, output_dir, result,
+                   on_progress=on_progress, workers=workers)
 
     result.manifest_path = Path(manifest_path)
     _write_manifest(Path(archive_line or archive_path), items, result,
@@ -107,22 +118,34 @@ def extract_archive(
 
 
 class _Source:
-    """Whatever the archive is, reduced to names, bytes and a lookup.
+    """Whatever the archive is, reduced to names and two ways to read one.
+
+    peek returns the front of an entry, which is all that deciding what it
+    is and what the manifest should say about it needs. read returns the
+    whole thing, and is left until the image is about to be decoded so that
+    an archive far larger than memory does not have to fit in it.
 
     A DCF names the image it differs from without a directory on the front,
     so the lookup is by the last part of the name only, which is how
     alice-tools finds it too.
     """
 
-    def __init__(self, names_and_readers):
-        self.entries = list(names_and_readers)
+    def __init__(self, names, read, peek):
+        self.names = list(names)
+        self._read = read
+        self._peek = peek
         self._by_basename = {}
-        for name, read in self.entries:
-            self._by_basename.setdefault(_basename(name), read)
+        for index, name in enumerate(self.names):
+            self._by_basename.setdefault(_basename(name), index)
 
-    def base_for(self, name: str) -> bytes | None:
-        read = self._by_basename.get(_basename(name))
-        return read() if read else None
+    def read(self, index: int) -> bytes:
+        return self._read(index)
+
+    def peek(self, index: int) -> bytes:
+        return self._peek(index)
+
+    def index_of_base(self, name: str) -> int | None:
+        return self._by_basename.get(_basename(name))
 
     def __enter__(self):
         return self
@@ -134,7 +157,12 @@ class _Source:
 class _AfaSource(_Source):
     def __init__(self, reader: AfaReader):
         self._reader = reader
-        super().__init__((e.name, (lambda e=e: reader.read(e))) for e in reader.entries)
+        entries = reader.entries
+        super().__init__(
+            [e.name for e in entries],
+            lambda i: reader.read(entries[i]),
+            lambda i: reader.peek(entries[i], PEEK),
+        )
 
     def __exit__(self, *exc):
         self._reader.close()
@@ -167,7 +195,14 @@ def _open_ald(path: Path) -> _Source:
         archive = read_ald(path)
     except (OSError, ValueError) as exc:
         raise ExtractionError(f"could not read {path.name}, {exc}") from exc
-    return _Source((e.name, (lambda e=e: e.data)) for e in archive.entries)
+    entries = archive.entries
+    # An ALD reader holds the whole archive already, so peeking costs
+    # nothing here and reading costs nothing either.
+    return _Source(
+        [e.name for e in entries],
+        lambda i: entries[i].data,
+        lambda i: entries[i].data[:PEEK],
+    )
 
 
 def _basename(name: str) -> str:
@@ -195,21 +230,21 @@ def _plan(source: _Source, result: ExtractResult) -> list[_Item]:
     thread, and so a DCF has the image it differs from in hand already.
     """
     items = []
-    for name, read in source.entries:
-        data = read()
+    for index, name in enumerate(source.names):
+        head = source.peek(index)
         extension = name.rsplit(".", 1)[-1] if "." in name else ""
-        item = _Item(name=name, path=_as_png(name), data=data)
+        item = _Item(index=index, name=name, path=_as_png(name))
 
-        if dcf.is_dcf(data):
+        if dcf.is_dcf(head):
             item.dst_format = DIFF_FORMAT
             try:
-                base = dcf.base_name(data)
-                item.extra = _as_png(base)
-                item.base = source.base_for(base)
+                base = dcf.base_name(head)
             except dcf.DcfError as exc:
                 result.errors[item.path] = str(exc)
                 continue
-        elif qnt.is_qnt(data):
+            item.extra = _as_png(base)
+            item.base_index = source.index_of_base(base)
+        elif qnt.is_qnt(head):
             # Kept exactly as the archive spells it, which alice-tools does
             # too, so a manifest from either can be compared to the other.
             item.dst_format = extension or PACKABLE
@@ -217,13 +252,23 @@ def _plan(source: _Source, result: ExtractResult) -> list[_Item]:
     return items
 
 
-def _write_all(items, output_dir: Path, result: ExtractResult, *, on_progress, workers):
+def _write_all(items, source: _Source, output_dir: Path, result: ExtractResult, *,
+               on_progress, workers):
+    """Decode and save every image, a wave at a time.
+
+    Reading stays on this thread, since an AFA is one file handle being
+    seeked. Only a wave's worth of archive bytes is alive at once, which is
+    what keeps a 772 MB archive from having to fit in memory to extract.
+    """
     workers = max(1, workers)
     wave = max(1, workers * 2)
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="extract") as pool:
         for start in range(0, len(items), wave):
-            batch = items[start:start + wave]
-            pending = {pool.submit(_write_one, item, output_dir): item for item in batch}
+            pending = {}
+            for item in items[start:start + wave]:
+                data = source.read(item.index)
+                base = source.read(item.base_index) if item.base_index is not None else None
+                pending[pool.submit(_write_one, item, data, base, output_dir)] = item
             for future, item in pending.items():
                 if on_progress:
                     on_progress(item.path)
@@ -233,24 +278,19 @@ def _write_all(items, output_dir: Path, result: ExtractResult, *, on_progress, w
                     result.errors[item.path] = f"{type(exc).__name__}, {exc}"
                     continue
                 result.written.append(item.path)
-                # The bytes have done their job and an archive holds
-                # thousands of them.
-                item.data = b""
-                item.base = None
 
 
-def _write_one(item: _Item, output_dir: Path) -> None:
+def _write_one(item: _Item, data: bytes, base: bytes | None, output_dir: Path) -> None:
     destination = resolve_fs_path(output_dir, item.path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    _decode(item).save(destination, "PNG")
+    _decode(item, data, base).save(destination, "PNG")
 
 
-def _decode(item: _Item) -> Image.Image:
-    if not formats.can_decode(item.data):
+def _decode(item: _Item, data: bytes, base: bytes | None) -> Image.Image:
+    if not formats.can_decode(data):
         raise ExtractionError(f"{item.name} is not an image this build can read")
-    base = item.base
     return formats.decode_image(
-        item.data,
+        data,
         lambda name: formats.decode_image(base) if base is not None else None,
     )
 

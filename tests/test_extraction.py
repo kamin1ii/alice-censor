@@ -212,3 +212,33 @@ def test_the_result_does_not_depend_on_the_thread_count(tmp_path, workers):
 
     assert sorted(result.written) == [f"cg{i}.png" for i in range(7)]
     assert all((out / p).is_file() for p in result.written)
+
+
+def test_the_whole_archive_is_not_read_into_memory_at_once(tmp_path):
+    """An archive is far bigger than the images being written out of it.
+
+    Planning looks only at the front of each entry, and the rest is read in
+    the wave that decodes it, so a 772 MB archive does not have to fit in
+    memory to extract.
+    """
+    from alice_censor.extraction import PEEK
+
+    archive = build(tmp_path, [(f"cg{i}.qnt", qnt.encode(flat(RED))) for i in range(6)])
+    reads = []
+
+    import alice_censor.extraction as module
+
+    original = module._Source.read
+
+    def counted(self, index):
+        reads.append(index)
+        return original(self, index)
+
+    module._Source.read = counted
+    try:
+        extract_archive(archive, tmp_path / "out", tmp_path / "out" / "m.txt", workers=1)
+    finally:
+        module._Source.read = original
+
+    assert len(reads) == 6, "each entry read once, and only when it is decoded"
+    assert PEEK < 65536, "a peek has to stay small to be worth doing"

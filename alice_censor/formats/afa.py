@@ -170,6 +170,19 @@ class AfaReader:
             )
         return data
 
+    def peek(self, entry: AfaEntry, size: int) -> bytes:
+        """The first `size` bytes of an entry, without reading the rest.
+
+        Enough to tell one format from another, and to read a header, which
+        is all a caller needs before deciding whether it wants the whole
+        thing. An archive is far too big to pull in entirely just to find
+        out what is in it.
+        """
+        if self._file is None:
+            raise AfaError("the archive is closed")
+        self._file.seek(self.data_start + entry.offset)
+        return self._file.read(min(size, entry.size))
+
     def __len__(self) -> int:
         return len(self.entries)
 

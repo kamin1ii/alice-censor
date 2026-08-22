@@ -109,7 +109,7 @@ overlays.
 > to test rather than something to trust, and reports either way are welcome.
 
 alice-tools can extract `.ald` but cannot write it, so Alice Censor writes that format itself
-(`alice_censor/ald.py`, following the [format spec](https://haniwa.technology/tech/ald.html)).
+(`alice_censor/formats/ald.py`, following the [format spec](https://haniwa.technology/tech/ald.html)).
 
 Rebuilding from the original archive rather than from an export folder makes the result better
 than a general-purpose repack could be. Any image you did not censor is copied across as the

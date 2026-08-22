@@ -78,7 +78,7 @@ nightly alice.exe and not 0.13.0.
 ## Sharing a project
 
 **File > Share Project…** writes a zip holding your review statuses, every censor layer you have
-drawn, and the stickers those layers use. No images and no paths, so it stays small: a Rance 03
+drawn, and the stickers those layers use. No images and no paths, so it stays small: a real
 project with 771 layers across 529 images comes to about 5 MB.
 
 **File > Open Shared Project…** applies one on top of the project you have open. Images are
@@ -100,7 +100,7 @@ overlays.
 > **This is new and lightly tested.** alice-tools cannot write `.ald` at all, so Alice Censor
 > writes the format itself. It has been checked against one real archive, which it reproduces
 > byte for byte, and edited images come back out of it pixel for pixel. A rebuilt archive has
-> also been played in **Rance 02**, where a few edited images on the save and load menu and the
+> also been played in a game, where a few edited images on the save and load menu and the
 > splash screens displayed correctly.
 >
 > That is the whole of the testing. No other game, no other archive, and only a handful of
@@ -116,7 +116,7 @@ than a general-purpose repack could be. Any image you did not censor is copied a
 exact bytes it already was, never decoded and never re-encoded. Only the images you actually
 drew on are rebuilt.
 
-That matters because roughly half a Rance 02 archive is AJP, which is lossy and which alice-tools
+That matters because roughly half of one tested archive is AJP, which is lossy and which alice-tools
 cannot encode at all. Extracting those to PNG and re-encoding would degrade every one of them,
 which is why alice-tools' own manifest quietly rewrites the whole lot to QNT. Copying untouched
 entries verbatim sidesteps the question. Only an image you edited that was originally AJP has to
@@ -260,9 +260,10 @@ The suite runs offscreen (`QT_QPA_PLATFORM=offscreen`) and needs neither a displ
   you and refuses to run rather than failing halfway, since 0.13.0 has no `--manifest` and
   responds to one by printing its usage text, extracting nothing and reporting success.
 - The built in support covers QNT, AJP, DCF and PMS images inside .afa and .ald archives, which is
-  everything Rance 02 and Rance 03 hold. An archive carrying something else needs alice.exe. The
-  formats were checked entry by entry against it: every QNT and DCF in Rance 03 decodes pixel for
-  pixel the same, as does the transparency of every AJP in Rance 02, and a rebuilt archive with
+  everything in the archives this was built against. An archive carrying something else needs
+  alice.exe. The formats were checked entry by entry against it: all 3683 QNT and DCF images in a
+  772 MB archive decode pixel for pixel the same, as does the transparency of all 920 AJP images
+  in another, and a rebuilt archive with
   nothing edited comes out byte for byte identical to the original.
 - The version number cannot tell you which build you have. The nightlies still report
   `alice-tools version 0.13.0`, the same string the 2023 release reports, so the check asks the
@@ -270,7 +271,7 @@ The suite runs offscreen (`QT_QPA_PLATFORM=offscreen`) and needs neither a displ
 - **Editing and rebuilding `.ald` archives is experimental.** That path is written by Alice
   Censor rather than by alice-tools, which has no `.ald` writer at all (`ar_pack` rejects any
   output that is not `.afa`, and `write_afa.c` is its only archive writer). It has had far less
-  real use than the `.afa` path. A rebuilt archive has been played in Rance 02, far enough to
+  real use than the `.afa` path. A rebuilt archive has been played in a game, far enough to
   confirm a few edited interface images render correctly, and that is the extent of it. The app
   says so when you open such a project, and asks again before overwriting the archive.
   See **Rebuilding .ald archives** above.

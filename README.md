@@ -29,15 +29,16 @@ nightly alice.exe and not 0.13.0.
 
 **Extract and repack**
 
-- Runs `alice ar extract` and, for `.afa`, `alice ar pack` for you, streaming their output into
-  the app. `.ald` archives are rebuilt by Alice Censor itself, see below.
-- Backs up the original archive to `<name>.orig-backup` before the first repack, since `ar pack`
+- Reads and writes `.afa` and `.ald` archives itself, and the QNT, AJP, DCF and PMS images inside
+  them, so extracting and repacking need no external program. Turn off **Advanced > Use built in
+  format support** to run `alice ar extract` and `ar pack` instead, streaming their output into
+  the app.
+- Backs up the original archive to `<name>.orig-backup` before the first repack, since a repack
   overwrites its target in place with no undo.
 - **Only the images you edited are rewritten.** Everything else goes back into the archive as the
   exact bytes it came out as, never decoded and never re-encoded, so a repack cannot quietly
-  alter a thousand files you never touched. This works for both formats: `.afa` gets it by
-  seeding alice-tools' own pack cache with the original bytes, and `.ald` by rebuilding straight
-  from the backup.
+  alter a thousand files you never touched. Rebuilding an archive you have not edited at all
+  reproduces it byte for byte.
 
 **Review gallery**
 
@@ -66,13 +67,13 @@ nightly alice.exe and not 0.13.0.
 **Correctness checks**
 
 - After every repack, the freshly written archive is read back and checked against what the
-  manifest says should be in it, with `ar list` for an `.afa` and with Alice Censor's own reader
-  for an `.ald`. A clean exit code from `ar pack` is not proof the archive is correct: alice-tools
-  issue
-  [#92](https://github.com/nunuhara/alice-tools/issues/92) is a real, confirmed bug where a
-  filename could be silently corrupted to `?` while `ar pack` still reported success, leaving the
-  game to hard lock on the file it can no longer find. Any missing file or suspicious `?` in a
-  name fails verification with an explanation instead of a silent "Repack complete".
+  manifest says should be in it, rather than trusting that the write reported success. A missing
+  file, an empty one, or a change in the order the game indexes into fails verification with an
+  explanation instead of a silent "Repack complete".
+- The same check also looks for a `?` in any filename. That guards the alice-tools path only,
+  where [issue #92](https://github.com/nunuhara/alice-tools/issues/92) could corrupt a name while
+  `ar pack` still reported success. Alice Censor writes the file table itself now, so with the
+  built in support on, which is the default, that cannot happen at all.
 - Re-opening a project rescans the extraction folder and reports what is new, changed, or missing
   since last time, so a game update does not mean re-reviewing everything.
 - The project file is written atomically (temp file plus rename), so a crash mid-save cannot
@@ -157,7 +158,7 @@ If installed as a package, the `alice-censor` command does the same thing.
 
 That runs the tests, builds, checks the exe actually launches, and tidies up, producing a single
 `dist\AliceCensor.exe` of about 26 MB. It carries the app icon and needs no Python install on the
-target machine. You still supply your own `alice.exe`.
+target machine, and no `alice.exe` either.
 
 Flags: `-SkipTests` to build without running them first, `-KeepBuildDir` to leave PyInstaller's
 intermediate `build\` folder for inspection. If a copy of the app is already running it is closed
@@ -222,7 +223,7 @@ alice_censor/
   gui/              Main window, project dialog, background workers
   gallery/          Thumbnail grid, model, folder tree, disk thumbnail cache
   editor/           Region canvas, layer panel, batch apply, sticker picker
-tests/              339 tests, no alice.exe or real archives required
+tests/              519 tests, no alice.exe or real archives required
 main.py             Entry point for the frozen build
 alice-censor.spec   PyInstaller build definition
 build.ps1           Test, build, verify the exe launches

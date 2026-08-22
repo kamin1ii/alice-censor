@@ -235,3 +235,50 @@ def test_verify_reports_an_archive_that_will_not_read_back(tmp_path):
 def _entries(path):
     with AfaReader(path) as ar:
         return [(e, ar.read(e)) for e in ar.entries]
+
+
+# ===== doing it on several threads
+#
+# Encoding is where nearly all the time goes, so it is spread over threads.
+# The archive that comes out must not depend on how many.
+
+
+@pytest.mark.parametrize("workers", [1, 2, 8])
+def test_the_result_does_not_depend_on_how_many_threads_ran_it(tmp_path, workers):
+    archive = _archive(tmp_path, names=[f"cg{i:03}.qnt" for i in range(9)])
+    manifest = _manifest(tmp_path, archive, [f"cg{i:03}.qnt" for i in range(9)])
+    project = ProjectState()
+    for i in range(9):
+        path = f"cg{i:03}.png"
+        project.images[path] = ImageRecord(layers=[_solid()] if i % 2 else [])
+
+    out = tmp_path / f"out{workers}.afa"
+    result = repack_afa(project, manifest, source_archive=archive,
+                        output_archive=out, workers=workers)
+
+    assert result.rebuilt_paths == [f"cg{i:03}.png" for i in (1, 3, 5, 7)]
+    assert result.copied_count == 5
+    assert result.errors == {}
+    if workers != 1:
+        serial = tmp_path / "serial.afa"
+        repack_afa(project, manifest, source_archive=archive,
+                   output_archive=serial, workers=1)
+        assert out.read_bytes() == serial.read_bytes()
+
+
+def test_one_image_failing_does_not_take_the_batch_with_it(tmp_path):
+    """A thread raising must land as one error, not as a dead repack."""
+    names = [f"cg{i:03}.qnt" for i in range(4)]
+    archive = _archive(tmp_path, names=names,
+                       extra=[("broken.dcf", b"dcf " + b"x" * 30)])
+    manifest = _manifest(tmp_path, archive, names + ["broken.dcf"])
+    project = ProjectState()
+    for name in names:
+        project.images[name.rsplit(".", 1)[0] + ".png"] = ImageRecord(layers=[_solid()])
+    project.images["broken.png"] = ImageRecord(layers=[_solid()])
+
+    result = repack_afa(project, manifest, source_archive=archive,
+                        output_archive=tmp_path / "out.afa", workers=4)
+
+    assert list(result.errors) == ["broken.png"]
+    assert len(result.rebuilt_paths) == 4, "the other four still got done"

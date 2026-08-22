@@ -17,3 +17,6 @@ out/
 build/
 dist/
 *.manifest
+
+# Crash dumps from MSYS/Git Bash tools
+*.stackdump

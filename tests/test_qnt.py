@@ -12,9 +12,9 @@ import struct
 import zlib
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageChops
 
-from alice_censor.formats.qnt import QntError, decode, is_qnt, read_header
+from alice_censor.formats.qnt import QntError, decode, encode, is_qnt, read_header
 
 
 # ===== reference encoder
@@ -262,3 +262,77 @@ def test_a_single_pixel_wide_image_reads_its_stored_transparency():
 
     assert _rgba(got) == pixels
     assert got.getpixel((0, 0))[3] == 0
+
+
+# ===== encoding
+#
+# The strongest check available is that the fast encoder produces the same
+# bytes as the naive transcription of the C above, so most of these compare
+# against that rather than only checking the pixels survive.
+
+
+@pytest.mark.parametrize("width,height", [
+    (8, 6), (7, 6), (8, 5), (7, 5), (1, 1), (1, 6), (9, 1), (2, 2), (32, 32),
+])
+def test_the_encoder_writes_what_the_c_would_have_written(width, height):
+    pixels = gradient(width, height)
+
+    written = encode(Image.frombytes("RGBA", (width, height), pixels))
+
+    assert written == make_qnt(pixels, width, height)
+
+
+@pytest.mark.parametrize("width,height", [
+    (8, 6), (7, 6), (8, 5), (7, 5), (1, 1), (1, 6), (9, 1), (2, 2), (33, 17),
+])
+def test_encoding_then_decoding_gives_the_pixels_back(width, height):
+    pixels = gradient(width, height)
+    image = Image.frombytes("RGBA", (width, height), pixels)
+
+    assert _rgba(decode(encode(image))) == pixels
+
+
+def test_noise_survives_encoding_too():
+    """Flat colour would hide an error in the prediction step."""
+    noise = random.Random(4127)
+    pixels = bytes(noise.randrange(256) for _ in range(48 * 32 * 4))
+    image = Image.frombytes("RGBA", (48, 32), pixels)
+
+    assert _rgba(decode(encode(image))) == pixels
+
+
+def test_an_image_that_is_not_rgba_is_converted_rather_than_refused():
+    plain = Image.new("RGB", (8, 6), (10, 20, 30))
+
+    got = decode(encode(plain))
+
+    assert got.getpixel((3, 2)) == (10, 20, 30, 255)
+
+
+def test_a_transparency_plane_is_always_written():
+    """AliceSoft leaves it out when opaque, alice-tools does not, and
+    repacked archives have only ever been played the alice-tools way."""
+    opaque = Image.new("RGBA", (8, 6), (10, 20, 30, 255))
+
+    assert read_header(encode(opaque)).has_alpha is True
+
+
+def test_an_empty_image_is_refused():
+    with pytest.raises(QntError, match="cannot encode"):
+        encode(Image.new("RGBA", (0, 4)))
+
+
+def test_pillow_still_does_the_arithmetic_the_format_needs():
+    """Encoding leans on two Pillow operations matching the C exactly.
+
+    A change in either would corrupt every image written, quietly, so the
+    assumption is pinned here rather than trusted.
+    """
+    left = Image.frombytes("L", (256, 256), bytes(x for _ in range(256) for x in range(256)))
+    up = Image.frombytes("L", (256, 256), bytes(y for y in range(256) for _ in range(256)))
+
+    average = ImageChops.add(up, left, scale=2).tobytes()
+    difference = ImageChops.subtract_modulo(up, left).tobytes()
+
+    assert average == bytes((y + x) >> 1 for y in range(256) for x in range(256))
+    assert difference == bytes((y - x) % 256 for y in range(256) for x in range(256))

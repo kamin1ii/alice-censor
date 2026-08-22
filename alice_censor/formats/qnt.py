@@ -52,7 +52,7 @@ import zlib
 from dataclasses import dataclass
 from io import BytesIO
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 MAGIC = b"QNT"
 
@@ -291,3 +291,112 @@ def _grayscale_png(scanlines: bytes, width: int, height: int) -> Image.Image:
     image = Image.open(BytesIO(png))
     image.load()
     return image
+
+
+# ===== writing
+#
+# The encoder in libsys4 is itself adapted from xsys35c by KichikuouChrome,
+# and is GPL-2.0-or-later like the rest. Written out here it stays close to
+# that structure, with the same two observations about speed as the decoder
+# above. The prediction each pixel stores is worked out from the original
+# neighbours rather than the encoded ones, so unlike decoding it can be done
+# to the whole image at once, and Pillow has exactly the two operations it
+# needs. Rearranging into blocks is byte slicing again.
+
+WRITE_HEADER_SIZE = 52
+WRITE_VERSION = 1
+WRITE_RESERVED = 1
+
+
+def encode(image: Image.Image) -> bytes:
+    """Encode an image as a QNT.
+
+    A transparency plane is always written, which is what alice-tools does.
+    AliceSoft's own files leave it out when a picture is opaque, and reading
+    one back gives the same pixels either way, but writing what alice-tools
+    writes keeps repacked archives on the path that has been played.
+    """
+    if image.mode != "RGBA":
+        image = image.convert("RGBA")
+    width, height = image.size
+    if width == 0 or height == 0:
+        raise QntError(f"cannot encode a {width}x{height} image")
+    padded_width = (width + 1) & ~1
+    padded_height = (height + 1) & ~1
+
+    # The padding is never predicted from and stays zero, so the prediction
+    # runs on the real image and the result is dropped onto a blank canvas.
+    canvas = Image.new("RGBA", (padded_width, padded_height), (0, 0, 0, 0))
+    canvas.paste(_predict(image), (0, 0))
+    red, green, blue, alpha = canvas.split()
+
+    colour = b"".join(
+        _to_blocks(plane.tobytes(), padded_width, padded_height)
+        for plane in (blue, green, red)
+    )
+    colour_stream = zlib.compress(colour, 9)
+    alpha_stream = zlib.compress(alpha.tobytes(), 9)
+
+    header = bytearray(WRITE_HEADER_SIZE)
+    header[0:4] = b"QNT\0"
+    struct.pack_into(
+        "<10I", header, 4,
+        WRITE_VERSION, WRITE_HEADER_SIZE, 0, 0, width, height, 24,
+        WRITE_RESERVED, len(colour_stream), len(alpha_stream),
+    )
+    return bytes(header) + colour_stream + alpha_stream
+
+
+def _predict(image: Image.Image) -> Image.Image:
+    """Replace every pixel with the difference from its predicted value.
+
+    The prediction is the pixel above averaged with the pixel to the left,
+    and it reads the original values throughout, so the whole image can be
+    done in two operations. The top row and the left column have only one
+    neighbour each and are filled in afterwards, along with the very first
+    pixel, which has none and is stored as it is.
+    """
+    width, height = image.size
+    above = ImageChops.offset(image, 0, 1)
+    left = ImageChops.offset(image, 1, 0)
+    # offset wraps the edges around, which is wrong, but every pixel it gets
+    # wrong is in the row and column being replaced below.
+    predicted = ImageChops.subtract_modulo(
+        ImageChops.add(above, left, scale=2), image
+    )
+
+    source = image.tobytes()
+    out = bytearray(predicted.tobytes())
+    stride = width * 4
+
+    row = bytearray(source[0:stride])
+    for i in range(stride - 1, 3, -1):
+        row[i] = (source[i - 4] - source[i]) & 0xFF
+    out[0:stride] = row
+
+    for y in range(1, height):
+        at = y * stride
+        for c in range(4):
+            out[at + c] = (source[at - stride + c] - source[at + c]) & 0xFF
+
+    return Image.frombytes("RGBA", (width, height), bytes(out))
+
+
+def _to_blocks(plane: bytes, width: int, height: int) -> bytes:
+    """Rearrange one plane into the two by two blocks the format stores.
+
+    The reverse of _deinterleave, and the same trick. Stepping a slice by two
+    pulls every other pixel out of a row, and stepping the destination by four
+    drops those into one corner of every block at once.
+    """
+    out = bytearray(width * height)
+    pair = bytearray(width * 2)
+    for block_row in range(height // 2):
+        top = plane[block_row * 2 * width:(block_row * 2 + 1) * width]
+        bottom = plane[(block_row * 2 + 1) * width:(block_row * 2 + 2) * width]
+        pair[0::4] = top[0::2]
+        pair[1::4] = bottom[0::2]
+        pair[2::4] = top[1::2]
+        pair[3::4] = bottom[1::2]
+        out[block_row * len(pair):(block_row + 1) * len(pair)] = pair
+    return bytes(out)

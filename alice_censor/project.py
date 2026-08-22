@@ -39,6 +39,7 @@ class LayerType(str, Enum):
     BLUR = "blur"
     PIXELATE = "pixelate"
     OVERLAY = "overlay"
+    TEXT = "text"
 
 
 @dataclass

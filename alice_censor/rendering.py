@@ -18,8 +18,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
+from . import fonts
 from .project import CensorLayer, LayerType
 
 RectPx = tuple[int, int, int, int]  # left, top, right, bottom
@@ -65,6 +66,12 @@ def rect_to_pixels(rect: tuple[float, float, float, float], image_size: tuple[in
     right = max(left, min(right, width))
     bottom = max(top, min(bottom, height))
     return left, top, right, bottom
+
+
+# Defaults for a text layer, as fractions so they survive a re-render at a
+# different resolution the way the rects do.
+TEXT_SIZE = 0.05      # of image height
+TEXT_PADDING = 0.06   # of the shorter side of the box
 
 
 def _parse_color(value: str) -> tuple[int, int, int, int]:
@@ -201,6 +208,131 @@ def _apply_overlay(image: Image.Image, nominal_box: RectPx, params: dict, sticke
     image.paste(composited.convert(image.mode) if image.mode != "RGBA" else composited, visible_box)
 
 
+def _apply_text(image: Image.Image, box: RectPx, params: dict) -> None:
+    """Draw a caption in the layer's box, over an optional filled panel.
+
+    The box is what the user dragged, so the panel fills it exactly and the
+    text is laid out inside. Size is stored as a fraction of image height
+    rather than in points, so a caption keeps its proportions if the same
+    project is applied to a differently sized image, the same way the rects
+    themselves do.
+
+    Text that does not fit is wrapped, and then shrunk until it does. The
+    alternative is letting it run outside the box the user drew, which is
+    worse than a slightly smaller caption.
+    """
+    left, top, right, bottom = box
+    width, height = right - left, bottom - top
+    if width <= 0 or height <= 0:
+        return
+
+    region = image.crop(box).convert("RGBA")
+    panel = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(panel)
+
+    opacity = max(0.0, min(1.0, float(params.get("opacity", 1.0))))
+    if params.get("background", True):
+        r, g, b, a = _parse_color(params.get("background_color", "#000000"))
+        draw.rectangle((0, 0, width - 1, height - 1), fill=(r, g, b, round(a * opacity)))
+
+    text = str(params.get("text", ""))
+    if text.strip():
+        _draw_caption(draw, (width, height), text, params, opacity, image.size[1])
+
+    composited = Image.alpha_composite(region, panel)
+    image.paste(composited.convert(image.mode) if image.mode != "RGBA" else composited, box)
+
+
+def _draw_caption(draw, box_size, text: str, params: dict, opacity: float,
+                  image_height: int) -> None:
+    box_width, box_height = box_size
+    padding = max(0, round(float(params.get("padding", TEXT_PADDING)) * min(box_size)))
+    inner_width = max(1, box_width - padding * 2)
+    inner_height = max(1, box_height - padding * 2)
+
+    family = str(params.get("font", fonts.DEFAULT_FAMILY))
+    wanted = max(fonts.MIN_SIZE, round(float(params.get("size", TEXT_SIZE)) * image_height))
+    font, lines, text_height = _fit_text(text, family, wanted, inner_width, inner_height, draw)
+
+    r, g, b, a = _parse_color(params.get("color", "#FFFFFF"))
+    fill = (r, g, b, round(a * opacity))
+    align = str(params.get("align", "center"))
+
+    y = padding + max(0, (inner_height - text_height) // 2)
+    for line in lines:
+        line_left, _, line_right, _ = draw.textbbox((0, 0), line, font=font)
+        line_width = line_right - line_left
+        if align == "left":
+            x = padding
+        elif align == "right":
+            x = box_width - padding - line_width
+        else:
+            x = (box_width - line_width) // 2
+        draw.text((x - line_left, y), line, font=font, fill=fill)
+        y += _line_height(draw, font)
+
+
+def _fit_text(text, family, wanted, inner_width, inner_height, draw):
+    """The largest size at or below `wanted` whose wrapped text fits."""
+    size = wanted
+    while True:
+        font = fonts.load(family, size)
+        lines = _wrap(text, font, inner_width, draw)
+        height = _line_height(draw, font) * len(lines)
+        widest = max(
+            (draw.textbbox((0, 0), line, font=font)[2] for line in lines), default=0
+        )
+        if size <= fonts.MIN_SIZE or (height <= inner_height and widest <= inner_width):
+            return font, lines, height
+        size = max(fonts.MIN_SIZE, int(size * 0.9))
+
+
+def _line_height(draw, font) -> int:
+    # Measured from a character with both an ascender and a descender, so
+    # every line gets the same spacing whatever happens to be on it.
+    top, bottom = draw.textbbox((0, 0), "Agあ", font=font)[1::2]
+    return max(1, bottom - top) + 2
+
+
+def _wrap(text: str, font, width: int, draw) -> list[str]:
+    """Break text to fit a width, on spaces where there are any.
+
+    Japanese does not use them, so a run with no spaces is broken between
+    characters instead. Explicit line breaks in the text are kept.
+    """
+    lines = []
+    for paragraph in text.splitlines() or [""]:
+        if not paragraph:
+            lines.append("")
+            continue
+        words = paragraph.split(" ")
+        current = ""
+        for word in words:
+            candidate = f"{current} {word}".strip() if current else word
+            if current and draw.textlength(candidate, font=font) > width:
+                lines.extend(_break_run(current, font, width, draw))
+                current = word
+            else:
+                current = candidate
+        lines.extend(_break_run(current, font, width, draw))
+    return lines or [""]
+
+
+def _break_run(run: str, font, width: int, draw) -> list[str]:
+    if not run or draw.textlength(run, font=font) <= width:
+        return [run]
+    out, current = [], ""
+    for character in run:
+        if current and draw.textlength(current + character, font=font) > width:
+            out.append(current)
+            current = character
+        else:
+            current += character
+    if current:
+        out.append(current)
+    return out
+
+
 @dataclass(frozen=True)
 class _LayerRenderer:
     """How one layer type turns into pixels.
@@ -224,6 +356,9 @@ _RENDERERS: dict[LayerType, _LayerRenderer] = {
         lambda img, box, params, _resolver: _apply_pixelate(img, box, params)
     ),
     LayerType.OVERLAY: _LayerRenderer(_apply_overlay, clamped=False),
+    LayerType.TEXT: _LayerRenderer(
+        lambda img, box, params, _resolver: _apply_text(img, box, params)
+    ),
 }
 
 

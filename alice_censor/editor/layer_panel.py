@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
+    QPlainTextEdit,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -19,7 +20,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal
 
+from .. import fonts
 from ..project import CensorLayer, LayerType
+from ..rendering import TEXT_PADDING, TEXT_SIZE
 from .sticker_picker_dialog import StickerPickerDialog
 
 DEFAULT_PARAMS: dict[LayerType, dict] = {
@@ -27,6 +30,17 @@ DEFAULT_PARAMS: dict[LayerType, dict] = {
     LayerType.BLUR: {"radius": 12},
     LayerType.PIXELATE: {"block_size": 12},
     LayerType.OVERLAY: {"sticker": "", "fit": "contain", "rotation": 0, "opacity": 1.0},
+    LayerType.TEXT: {
+        "text": "CENSORED",
+        "color": "#FFFFFF",
+        "size": TEXT_SIZE,
+        "font": fonts.DEFAULT_FAMILY,
+        "align": "center",
+        "background": True,
+        "background_color": "#000000",
+        "padding": TEXT_PADDING,
+        "opacity": 1.0,
+    },
 }
 
 # Display names shown in the UI, kept separate from LayerType's own string
@@ -38,6 +52,7 @@ LAYER_TYPE_LABELS: dict[LayerType, str] = {
     LayerType.BLUR: "Blur",
     LayerType.PIXELATE: "Pixelate",
     LayerType.OVERLAY: "Image / Sticker",
+    LayerType.TEXT: "Text",
 }
 
 
@@ -162,28 +177,35 @@ class LayerPropertyPanel(QWidget):
             self._build_pixelate_widgets(params)
         elif layer_type == LayerType.OVERLAY:
             self._build_overlay_widgets(params)
+        elif layer_type == LayerType.TEXT:
+            self._build_text_widgets(params)
 
-    def _build_solid_widgets(self, params: dict) -> None:
-        color_button = QPushButton()
+    def _color_button(self, params: dict, key: str, default: str, title: str) -> QPushButton:
+        """A swatch that opens a colour picker and writes back to `key`."""
+        button = QPushButton()
 
         def set_swatch(color_hex: str) -> None:
-            color_button.setStyleSheet(f"background-color: {color_hex};")
-            color_button.setText(color_hex)
+            button.setStyleSheet(f"background-color: {color_hex};")
+            button.setText(color_hex)
 
-        set_swatch(params.get("color", "#000000"))
+        set_swatch(params.get(key, default))
 
         def pick_color() -> None:
             from PySide6.QtWidgets import QColorDialog
 
-            initial = QColor(params.get("color", "#000000"))
-            color = QColorDialog.getColor(initial, self, "Pick Color")
+            color = QColorDialog.getColor(QColor(params.get(key, default)), self, title)
             if color.isValid():
-                params["color"] = color.name()
-                set_swatch(params["color"])
+                params[key] = color.name()
+                set_swatch(params[key])
                 self._param_changed()
 
-        color_button.clicked.connect(pick_color)
-        self.params_layout.addRow("Color:", color_button)
+        button.clicked.connect(pick_color)
+        return button
+
+    def _build_solid_widgets(self, params: dict) -> None:
+        self.params_layout.addRow(
+            "Color:", self._color_button(params, "color", "#000000", "Pick Color")
+        )
         self.params_layout.addRow("Opacity:", self._opacity_spin(params))
 
     def _build_blur_widgets(self, params: dict) -> None:
@@ -257,6 +279,80 @@ class LayerPropertyPanel(QWidget):
 
         rotation_spin.valueChanged.connect(on_rotation)
         self.params_layout.addRow("Rotation:", rotation_spin)
+
+        self.params_layout.addRow("Opacity:", self._opacity_spin(params))
+
+    def _build_text_widgets(self, params: dict) -> None:
+        text_edit = QPlainTextEdit(str(params.get("text", "")))
+        text_edit.setFixedHeight(60)
+        text_edit.setPlaceholderText("CENSORED")
+
+        def on_text() -> None:
+            params["text"] = text_edit.toPlainText()
+            self._param_changed()
+
+        text_edit.textChanged.connect(on_text)
+        self.params_layout.addRow("Text:", text_edit)
+
+        font_combo = QComboBox()
+        families = fonts.available() or (fonts.DEFAULT_FAMILY,)
+        font_combo.addItems(families)
+        current = params.get("font", fonts.DEFAULT_FAMILY)
+        if current in families:
+            font_combo.setCurrentText(current)
+
+        def on_font(name: str) -> None:
+            params["font"] = name
+            self._param_changed()
+
+        font_combo.currentTextChanged.connect(on_font)
+        self.params_layout.addRow("Font:", font_combo)
+
+        # Shown as a percentage because a fraction of image height is the
+        # right thing to store, so the caption keeps its proportions on a
+        # differently sized image, and the wrong thing to make somebody type.
+        size_spin = QSpinBox()
+        size_spin.setRange(1, 50)
+        size_spin.setSuffix(" % of image height")
+        size_spin.setValue(max(1, round(float(params.get("size", TEXT_SIZE)) * 100)))
+
+        def on_size(value: int) -> None:
+            params["size"] = value / 100
+            self._param_changed()
+
+        size_spin.valueChanged.connect(on_size)
+        self.params_layout.addRow("Size:", size_spin)
+
+        self.params_layout.addRow(
+            "Text color:", self._color_button(params, "color", "#FFFFFF", "Pick Text Color")
+        )
+
+        align_combo = QComboBox()
+        align_combo.addItems(["left", "center", "right"])
+        align_combo.setCurrentText(str(params.get("align", "center")))
+
+        def on_align(value: str) -> None:
+            params["align"] = value
+            self._param_changed()
+
+        align_combo.currentTextChanged.connect(on_align)
+        self.params_layout.addRow("Align:", align_combo)
+
+        background_check = QCheckBox("Fill the box behind the text")
+        background_check.setChecked(bool(params.get("background", True)))
+        background_button = self._color_button(
+            params, "background_color", "#000000", "Pick Background Color"
+        )
+        background_button.setEnabled(background_check.isChecked())
+
+        def on_background(checked: bool) -> None:
+            params["background"] = checked
+            background_button.setEnabled(checked)
+            self._param_changed()
+
+        background_check.toggled.connect(on_background)
+        self.params_layout.addRow("Background:", background_check)
+        self.params_layout.addRow("Background color:", background_button)
 
         self.params_layout.addRow("Opacity:", self._opacity_spin(params))
 
